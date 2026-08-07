@@ -9,22 +9,43 @@
 /* 폰 화면 우선 — 기사가 이동 중에 본다. 큰 글자, 큰 버튼, 한 열. */
 *{box-sizing:border-box}
 body{font-family:"Segoe UI","Malgun Gothic",sans-serif; margin:0; background:#F4F5F2; color:#222;}
-/* flow식 골격: 왼쪽 사이드바에서 고르고, 오른쪽에 내용이 나온다.
-   폰(860px 이하)에서는 사이드바가 위쪽 가로 막대로 접힌다 — 기사는 폰으로 보니까. */
+/* flow식 골격 (인각님 제공 캡처 기준): 흰 사이드바(주 버튼 + 접히는 섹션) + 상단 바(검색·아바타).
+   아이콘 레일은 제품이 하나뿐이라 뺐다. 폰(860px 이하)에서는 사이드바가 위쪽 가로 막대로 접힌다. */
 .shell{display:flex; min-height:100vh;}
-aside.side{width:200px; flex:none; background:#1F5B43; color:#fff; padding:16px 12px;}
-.side a{display:block; color:#fff; text-decoration:none; padding:9px 12px; border-radius:8px;
-  margin-bottom:3px; font-size:.93rem;}
-.side a:hover{background:rgba(255,255,255,.12);}
-.side a.on{background:rgba(255,255,255,.22); font-weight:700;}
-.side .brand{font-weight:800; font-size:1.05rem; margin-bottom:14px;}
+aside.side{width:216px; flex:none; background:#fff; border-right:1px solid #E0E3DC; padding:16px 12px;}
+.side .brand{font-weight:800; font-size:1.05rem; margin-bottom:12px; padding:0 4px;}
+.side a.primary{display:block; background:#1F5B43; color:#fff; text-align:center; font-weight:700;
+  border-radius:8px; padding:10px 12px; margin-bottom:14px; text-decoration:none;}
+.side a{display:block; color:#222; text-decoration:none; padding:8px 10px; border-radius:8px;
+  margin-bottom:2px; font-size:.92rem;}
+.side a:hover{background:#F0F2EA;}
+.side a.on{background:#E5F2E9; color:#1F5B43; font-weight:700;}
+.side details{margin-top:12px;}
+.side summary{cursor:pointer; list-style:none; color:#777; font-size:.78rem; font-weight:700;
+  padding:4px 10px; letter-spacing:.04em;}
+.side summary::after{content:" ⌃"; float:right; opacity:.5;}
+.side details:not([open]) summary::after{content:" ⌄";}
+.side a.recent{font-size:.85rem; color:#555; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.dot{display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:7px; background:#E5B800;}
+.dot.red{background:#C0392B;}
 .content{flex:1; min-width:0;}
+.topbar{display:flex; align-items:center; gap:12px; background:#fff; border-bottom:1px solid #E0E3DC;
+  padding:9px 18px;}
+.topbar .search{flex:1; max-width:460px; margin:0 auto;}
+.topbar input[type=search]{width:100%; border:1px solid #C9CEC4; border-radius:999px;
+  padding:8px 16px; font-size:.92rem; font-family:inherit; background:#F7F8F5;}
+.avatar{width:34px; height:34px; border-radius:50%; background:#1F5B43; color:#fff; font-size:.8rem;
+  font-weight:700; display:flex; align-items:center; justify-content:center; flex:none;}
 main{max-width:820px; margin:0 auto; padding:20px 16px;}
 @media (max-width:860px){
   .shell{display:block;}
-  aside.side{width:auto; display:flex; overflow-x:auto; padding:8px; gap:2px; align-items:center;}
+  aside.side{width:auto; display:flex; overflow-x:auto; padding:8px; gap:2px; align-items:center; border-right:0; border-bottom:1px solid #E0E3DC;}
   .side a{white-space:nowrap; margin-bottom:0; padding:7px 10px;}
   .side .brand{margin:0 6px 0 0;}
+  .side a.primary{margin:0 6px 0 0; padding:7px 12px;}
+  .side details{display:contents;}
+  .side summary{display:none;}
+  .side a.recent{display:none;}   /* 폰에서는 최근 목록 생략 — 가로 공간이 없다 */
 }
 h1{font-size:1.25rem; margin:8px 0 14px;}
 h2{font-size:1.05rem; margin:22px 0 8px;}
@@ -70,14 +91,31 @@ img.photo{display:block; max-width:220px; max-height:220px; border-radius:8px; m
 <aside class="side">
   {% set p = request.url.path %}
   <div class="brand">🧺 세탁 티켓</div>
+  <a class="primary" href="/new">＋ 컴플레인 접수</a>
   <a class="{{ 'on' if p == '/' }}" href="/">📊 대시보드</a>
-  <a class="{{ 'on' if p == '/f/1' }}" href="/f/1">🏭 제1공장</a>
-  <a class="{{ 'on' if p == '/f/2' }}" href="/f/2">🏭 제2공장</a>
-  <a class="{{ 'on' if p == '/clients' }}" href="/clients">🏢 거래처 현황</a>
-  <a class="{{ 'on' if p == '/new' }}" href="/new">＋ 컴플레인 접수</a>
-  <a class="{{ 'on' if p.startswith('/me') }}" href="/me">👤 내 티켓</a>
+  <details open><summary>공장</summary>
+    <a class="{{ 'on' if p == '/f/1' }}" href="/f/1">🏭 제1공장 (창동)</a>
+    <a class="{{ 'on' if p == '/f/2' }}" href="/f/2">🏭 제2공장 (의정부)</a>
+  </details>
+  <details open><summary>모아보기</summary>
+    <a class="{{ 'on' if p == '/clients' }}" href="/clients">🏢 거래처 현황</a>
+    <a class="{{ 'on' if p.startswith('/me') }}" href="/me">👤 내 티켓</a>
+  </details>
+  <details open><summary>최근 업데이트</summary>
+    {% for t in recent_tickets() %}
+    <a class="recent" href="/c/{{ t.id }}"><span class="dot {{ 'red' if t.severity == 'urgent' }}"></span>#{{ t.id }} {{ t.client_name }}</a>
+    {% else %}
+    <a class="recent">미완료 없음 🎉</a>
+    {% endfor %}
+  </details>
 </aside>
 <div class="content">
+<div class="topbar">
+  <form class="search" action="/search" method="get">
+    <input type="search" name="q" placeholder="🔍 티켓 검색 — 내용·거래처 이름" value="{{ request.query_params.get('q', '') }}">
+  </form>
+  <span class="avatar">인각</span>
+</div>
 <main>{% block body %}{% endblock %}</main>
 </div>
 </div>

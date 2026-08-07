@@ -271,6 +271,16 @@ def init_db() -> None:
 init_db()
 
 
+def recent_tickets():
+    """사이드바 「최근 업데이트」용 — 최근 미완료 티켓 3건 (flow의 「최근 업데이트」 자리).
+    모든 화면의 사이드바에서 부르므로 Jinja 전역 함수로 등록해 둔다 (아래)."""
+    con = db()
+    rows = con.execute(TICKET_SELECT + """
+        WHERE c.status != 'done' ORDER BY c.created_at DESC LIMIT 3""").fetchall()
+    con.close()
+    return rows
+
+
 # ── 공통: 티켓 목록을 화면용으로 읽는 SQL (거래처·담당자 이름까지 JOIN) ──
 TICKET_SELECT = """
 SELECT c.*, cl.name AS client_name, s.name AS assignee_name, s.role AS assignee_role,
@@ -280,6 +290,26 @@ JOIN clients cl ON cl.id = c.client_id
 LEFT JOIN factories f ON f.id = cl.factory_id
 LEFT JOIN staff s ON s.id = c.assignee_id
 """
+
+
+templates.env.globals["recent_tickets"] = recent_tickets   # 사이드바가 어느 화면에서든 부르게
+
+
+@app.get("/search")
+def search(request: Request, q: str = ""):
+    """상단 바 검색 — 티켓 내용·거래처 이름에서 글자 검색 (flow의 상단 검색 자리)."""
+    con = db()
+    rows = []
+    if q.strip():
+        like = f"%{q.strip()}%"
+        rows = con.execute(TICKET_SELECT + """
+            WHERE c.content LIKE ? OR cl.name LIKE ?
+            ORDER BY c.created_at DESC""", (like, like)).fetchall()
+    con.close()
+    return templates.TemplateResponse(request, "search.html", {
+        "q": q, "rows": rows,
+        "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,
+    })
 
 
 @app.get("/")
