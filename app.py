@@ -438,8 +438,10 @@ def dashboard(request: Request, factory: int | None = None):
                           fargs).fetchall()
     factories = con.execute("SELECT * FROM factories ORDER BY id").fetchall()
     con.close()
+    cols, days_old, photo_n = board_data(factory)   # 대시보드 상단의 칸반 (같은 공장 필터로)
     return templates.TemplateResponse(request, "dashboard.html", {
         "open_tickets": open_tickets, "done_recent": done_recent,
+        "cols": cols, "days_old": days_old, "photo_n": photo_n,
         "stats": stats, "by_type": by_type,
         "factories": factories, "cur_factory": factory,
         "allow_all": scope_of(user) is None,   # 본사만 공장 탭을 본다
@@ -447,14 +449,9 @@ def dashboard(request: Request, factory: int | None = None):
     })
 
 
-@app.get("/board")
-def board(request: Request):
-    """칸반 보드 — 상태별 열(접수→확인됨→처리중→완료)에 티켓이 카드로 붙는다.
-    지라(Jira)식 시각화: 일의 흐름이 왼쪽에서 오른쪽으로 흘러가는 게 한눈에 보인다."""
-    user = require_user(request)
-    if user is None:
-        return RedirectResponse("/login", status_code=303)
-    fid = scope_of(user)
+def board_data(fid: int | None):
+    """칸반 보드의 재료 — 상태별 묶음·경과일·사진 개수.
+    보드 전용 화면과 대시보드 상단이 같은 재료를 쓴다 (두 벌 만들면 어긋나므로)."""
     con = db()
     rows = con.execute(TICKET_SELECT + " WHERE 1=1" + (" AND cl.factory_id=?" if fid else "")
                        + " ORDER BY (c.severity='urgent') DESC, c.created_at ASC",
@@ -472,6 +469,17 @@ def board(request: Request):
         created = datetime.strptime(t["created_at"], "%Y-%m-%d %H:%M")
         days_old[t["id"]] = (today - created).days
     cols["done"] = sorted(cols["done"], key=lambda t: t["done_at"] or "", reverse=True)[:8]
+    return cols, days_old, photo_n
+
+
+@app.get("/board")
+def board(request: Request):
+    """칸반 보드 — 상태별 열(접수→확인됨→처리중→완료)에 티켓이 카드로 붙는다.
+    지라(Jira)식 시각화: 일의 흐름이 왼쪽에서 오른쪽으로 흘러가는 게 한눈에 보인다."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    cols, days_old, photo_n = board_data(scope_of(user))
     return templates.TemplateResponse(request, "board.html", {
         "cols": cols, "days_old": days_old, "photo_n": photo_n,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,

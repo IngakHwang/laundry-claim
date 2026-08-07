@@ -23,6 +23,9 @@
   <div class="stat"><b>{{ stats.avg_hours if stats.avg_hours is not none else "—" }}</b><span>평균 처리(시간)</span></div>
 </div>
 
+<h2>흐름 한눈에 <span class="meta">(카드를 끌어 상태를 바꿀 수 있습니다)</span></h2>
+{% include "_board.html" %}
+
 <h2>미완료 티켓</h2>
 {% for t in open_tickets %}
 <a class="card {{ 'urgent' if t.severity == 'urgent' }}" href="/c/{{ t.id }}">
