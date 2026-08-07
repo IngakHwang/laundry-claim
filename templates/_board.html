@@ -18,6 +18,11 @@
         · 👤 <b>{{ t.assignee_name or "미배정" }}</b>
         {% if photo_n.get(t.id) %} · 📷{{ photo_n[t.id] }}{% endif %}
         {% if status != 'done' %} · {{ days_old[t.id] }}일째{% endif %}
+        {% if status != 'done' %}
+        {% set nxt = {"new": "acked", "acked": "working", "working": "done"}[status] %}
+        <button class="mv" type="button" data-id="{{ t.id }}" data-next="{{ nxt }}"
+                title="다음 단계로 옮기기 (끌어놓기와 같은 동작)">▶ {{ STATUS_LABEL[nxt] }}</button>
+        {% endif %}
       </div>
     </a>
     {% else %}
@@ -40,12 +45,22 @@ document.querySelectorAll('.col').forEach(function (col) {
   col.addEventListener('drop', function (e) {
     e.preventDefault();
     col.classList.remove('dragover');
-    var id = e.dataTransfer.getData('text/plain');
-    if (!id) return;
-    var fd = new FormData();
-    fd.append('status', col.dataset.status);
-    fetch('/c/' + id + '/status', { method: 'POST', body: fd })
-      .then(function () { location.reload(); });
+    moveTicket(e.dataTransfer.getData('text/plain'), col.dataset.status);
   });
 });
+// 「▶ 다음 단계」 버튼 — 폰에는 끌어놓기가 없으므로(터치는 HTML 드래그 미지원) 버튼이 같은 일을 한다
+document.querySelectorAll('.mv').forEach(function (b) {
+  b.addEventListener('click', function (e) {
+    e.preventDefault();          // 카드 링크로 넘어가는 것을 막고
+    e.stopPropagation();
+    moveTicket(b.dataset.id, b.dataset.next);
+  });
+});
+function moveTicket(id, status) {
+  if (!id || !status) return;
+  var fd = new FormData();
+  fd.append('status', status);
+  fetch('/c/' + id + '/status', { method: 'POST', body: fd })
+    .then(function () { location.reload(); });
+}
 </script>

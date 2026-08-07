@@ -1,8 +1,7 @@
 {% extends "base.html" %}
 {% block title %}공장 대시보드 — 세탁 클레임{% endblock %}
-{% block head %}<meta http-equiv="refresh" content="15">{% endblock %}
 {% block body %}
-<h1>공장 대시보드 <span class="meta">(15초마다 자동 갱신 — 모니터에 띄워두는 화면)</span></h1>
+<h1>공장 대시보드 <span class="meta">(15초마다 자동 갱신 — 카드를 끄는 동안은 멈춥니다)</span></h1>
 
 {% if allow_all %}
 <div class="tabs">
@@ -63,4 +62,11 @@
 {% endfor %}
 </details>
 
+<script>
+// 모니터용 자동 갱신 — 단, 카드를 끌고 있는 동안은 건너뛴다 (끌다가 화면이 리셋되는 사고 방지)
+var dragging = false;
+document.addEventListener('dragstart', function () { dragging = true; });
+document.addEventListener('dragend', function () { dragging = false; });
+setInterval(function () { if (!dragging) location.reload(); }, 15000);
+</script>
 {% endblock %}
