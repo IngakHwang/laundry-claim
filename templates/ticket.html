@@ -2,7 +2,7 @@
 {% block title %}#{{ t.id }} {{ t.client_name }} — 세탁 티켓{% endblock %}
 {% block body %}
 <h1>
-  #{{ t.id }} {{ t.client_name }}
+  #{{ t.id }} <a href="/client/{{ t.client_id }}">{{ t.client_name }}</a>
   {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
   <span class="badge b-status-{{ t.status }}">{{ STATUS_LABEL[t.status] }}</span>
   <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>

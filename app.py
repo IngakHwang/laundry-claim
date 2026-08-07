@@ -246,24 +246,62 @@ def init_db() -> None:
             """이름으로 담당자 id 찾기 (예시 티켓 배정용)."""
             return con.execute("SELECT id FROM staff WHERE name=?", (name,)).fetchone()[0]
 
-        # 예시 티켓 1: 배송 컴플레인 — 기사에게 배정, 아직 미확인
-        con.execute("""INSERT INTO complaints
-            (client_id, type, severity, content, channel, assignee_id, status, created_at)
-            VALUES (1, 'delivery', 'urgent', '어제 납품분에 다른 업체 수건이 섞여 왔음. 회수 요청.',
-                    '전화', ?, 'new', ?)""", (sid("박기사"), now()))
-        con.execute("""INSERT INTO actions (complaint_id, actor, kind, content, created_at)
-            VALUES (1, '사장', 'register', '그랜드한강호텔 지배인 전화 접수', ?)""", (now(),))
-        con.execute("""INSERT INTO actions (complaint_id, actor, kind, content, created_at)
-            VALUES (1, '사장', 'instruct', '오늘 수거 때 섞인 수건 회수해 올 것', ?)""", (now(),))
-        # 예시 티켓 2: 품질 컴플레인 — 공장 인력에게 배정, 처리중
-        con.execute("""INSERT INTO complaints
-            (client_id, type, severity, content, channel, assignee_id, status, created_at)
-            VALUES (6, 'quality', 'normal', '환자복 소매 얼룩이 안 빠진 채 납품됨 (3벌)',
-                    '문자', ?, 'working', ?)""", (sid("김세탁"), now()))
-        con.execute("""INSERT INTO actions (complaint_id, actor, kind, content, created_at)
-            VALUES (2, '사장', 'register', '요양병원 문자 접수, 사진 3장 받음', ?)""", (now(),))
-        con.execute("""INSERT INTO actions (complaint_id, actor, kind, content, created_at)
-            VALUES (2, '김세탁', 'work', '재세탁 진행. 얼룩 종류가 녹 계열이라 전용 처리 필요', ?)""", (now(),))
+        def add_ticket(client, type_, sev, content, channel, assignee, created, acts, status, done=None):
+            """예시 티켓 한 건 + 조치 일지 + 사진.
+            acts = [(누가, 종류, 내용, 시각, [사진 파일명들])]. 사진은 make_demo_photos.py 가 만든 데모 이미지."""
+            cur = con.execute("""INSERT INTO complaints
+                (client_id, type, severity, content, channel, assignee_id, status, created_at, done_at)
+                VALUES (?,?,?,?,?,?,?,?,?)""",
+                (client, type_, sev, content, channel, sid(assignee), status, created, done))
+            tid = cur.lastrowid
+            for actor, kind, text, at, photo_files in acts:
+                a = con.execute("""INSERT INTO actions (complaint_id, actor, kind, content, created_at)
+                                   VALUES (?,?,?,?,?)""", (tid, actor, kind, text, at))
+                for ph in photo_files:
+                    con.execute("INSERT INTO photos (action_id, filename) VALUES (?,?)", (a.lastrowid, ph))
+
+        # ── 예시 티켓 — 두 공장 모두, 여러 날짜에 걸쳐 (완료 이력이 있어야 평균 처리 시간이 산다) ──
+        today = now()[:10]
+        add_ticket(1, "delivery", "urgent", "어제 납품분에 다른 업체 수건이 섞여 왔음. 회수 요청.",
+                   "전화", "박기사", f"{today} 08:40", [
+            ("사장", "register", "그랜드한강호텔 지배인 전화 접수", f"{today} 08:40", ["demo_towels_mixed.png"]),
+            ("사장", "instruct", "오늘 수거 때 섞인 수건 회수해 올 것", f"{today} 08:42", []),
+        ], "new")
+        add_ticket(6, "quality", "normal", "환자복 소매 얼룩이 안 빠진 채 납품됨 (3벌)",
+                   "문자", "김세탁", "2026-08-06 14:10", [
+            ("사장", "register", "요양병원 문자 접수, 사진 받음", "2026-08-06 14:10", ["demo_sleeve_stain.png"]),
+            ("김세탁", "work", "재세탁 진행. 녹 계열 얼룩이라 전용 처리 필요", "2026-08-06 16:30", []),
+        ], "working")
+        add_ticket(7, "quality", "normal", "수건 5장이 누렇게 변색된 채 왔다고 교환 요청",
+                   "전화", "이다림", "2026-08-05 10:20", [
+            ("사장", "register", "베뉴모텔 사장님 전화", "2026-08-05 10:20", ["demo_towel_yellow.png"]),
+            ("이다림", "ack", "지시 확인", "2026-08-05 10:55", []),
+            ("이다림", "work", "재세탁 후 검수 — 변색 심한 3장은 폐기, 새 수건으로 교체", "2026-08-05 14:20", []),
+            ("이다림", "done", "교체분 당일 배송 완료", "2026-08-05 15:40", []),
+        ], "done", "2026-08-05 15:40")
+        add_ticket(9, "quality", "urgent", "토요일 행사분 테이블보에 와인 얼룩 12장이 그대로 납품됨",
+                   "전화", "장미란", f"{today} 09:15", [
+            ("사장", "register", "웨딩홀 매니저 전화 — 다음 행사가 금요일이라 급함", f"{today} 09:15", ["demo_tablecloth_wine.png"]),
+            ("장미란", "ack", "지시 확인", f"{today} 09:40", []),
+            ("장미란", "work", "전량 회수해 얼룩 전용 재세탁 돌리는 중", f"{today} 11:05", []),
+        ], "working")
+        add_ticket(10, "delivery", "normal", "가운 40장 수량 부족 — 주말 투숙 앞두고 보충 요청",
+                   "문자", "나운전", f"{today} 10:30", [
+            ("사장", "register", "리조트 프런트 문자", f"{today} 10:30", []),
+            ("사장", "instruct", "내일 오전 배송 때 가운 40장 추가 적재", f"{today} 10:33", []),
+            ("나운전", "ack", "지시 확인", f"{today} 12:02", []),
+        ], "acked")
+        add_ticket(10, "quality", "normal", "스파 타월에서 꿉꿉한 냄새가 난다는 고객 불만",
+                   "전화", "윤정례", "2026-08-04 09:00", [
+            ("사장", "register", "리조트 지배인 전화", "2026-08-04 09:00", ["demo_towel_mold.png"]),
+            ("윤정례", "work", "건조 공정 점검 — 건조기 2호기 온도 저하 발견", "2026-08-04 13:30", []),
+            ("윤정례", "done", "재세탁·완전 건조 후 재납품. 건조기 수리 완료", "2026-08-04 17:10", []),
+        ], "done", "2026-08-04 17:10")
+        add_ticket(5, "etc", "normal", "수거 방문을 오전 7시 이전으로 바꿔달라는 요청",
+                   "전화", "최배송", "2026-08-06 09:50", [
+            ("사장", "register", "스테이노원 프런트 전화", "2026-08-06 09:50", []),
+            ("사장", "instruct", "2호차 노선 순서 조정 검토", "2026-08-06 09:55", []),
+        ], "new")
     con.commit()
     con.close()
 
@@ -342,6 +380,37 @@ def dashboard(request: Request, factory: int | None = None):
         "open_tickets": open_tickets, "done_recent": done_recent,
         "stats": stats, "by_type": by_type,
         "factories": factories, "cur_factory": factory,
+        "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,
+    })
+
+
+@app.get("/client/{client_id}")
+def client_detail(request: Request, client_id: int):
+    """거래처 상세 — 이 업체의 이슈가 무엇이 있고 어떻게 처리되고 있는지 한 화면에 추적한다."""
+    con = db()
+    c = con.execute("""SELECT c.*, f.name AS factory_name FROM clients c
+        LEFT JOIN factories f ON f.id = c.factory_id WHERE c.id=?""", (client_id,)).fetchone()
+    goods = con.execute("""SELECT i.name, ci.daily_qty FROM client_items ci
+        JOIN items i ON i.id = ci.item_id WHERE ci.client_id=? ORDER BY ci.daily_qty DESC""",
+        (client_id,)).fetchall()
+    open_tickets = con.execute(TICKET_SELECT + """
+        WHERE c.client_id=? AND c.status != 'done'
+        ORDER BY (c.severity='urgent') DESC, c.created_at ASC""", (client_id,)).fetchall()
+    done_tickets = con.execute(TICKET_SELECT + """
+        WHERE c.client_id=? AND c.status = 'done' ORDER BY c.done_at DESC""", (client_id,)).fetchall()
+    # 업체별 지표: 누적 건수 · 유형별 · 평균 처리 시간 (반복되는 문제가 있는 거래처를 숫자로 보려고)
+    stats = {
+        "total": len(open_tickets) + len(done_tickets),
+        "avg_hours": con.execute("""SELECT ROUND(AVG((julianday(done_at)-julianday(created_at))*24),1)
+                                    FROM complaints WHERE client_id=? AND status='done'""",
+                                 (client_id,)).fetchone()[0],
+    }
+    by_type = con.execute("""SELECT type, COUNT(*) n FROM complaints
+                             WHERE client_id=? GROUP BY type ORDER BY n DESC""", (client_id,)).fetchall()
+    con.close()
+    return templates.TemplateResponse(request, "client.html", {
+        "c": c, "goods": goods, "open_tickets": open_tickets, "done_tickets": done_tickets,
+        "stats": stats, "by_type": by_type,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,
     })
 

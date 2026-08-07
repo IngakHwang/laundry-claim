@@ -19,7 +19,7 @@
 
 <h2>거래처 ({{ client_rows|length }}곳)</h2>
 {% for row in client_rows %}
-<div class="card">
+<a class="card" href="/client/{{ row.c.id }}">
   <b>{{ row.c.name }}</b> <span class="badge b-type">{{ row.c.biz_type }}</span>
   <span class="meta">{% if row.c.rooms %}객실(침상) {{ row.c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(row.c.daily_kg) }}kg</span>
   <div class="meta" style="margin-top:4px">
@@ -27,7 +27,7 @@
     {% for it in row.goods %}{{ it.name }} {{ "{:,}".format(it.daily_qty) }}장{{ " · " if not loop.last }}{% endfor %}
   </div>
   {% if row.c.note %}<div class="instr">📌 상시 특이사항: {{ row.c.note }}</div>{% endif %}
-</div>
+</a>
 {% endfor %}
 
 <h2>인력 ({{ staff|length }}명)</h2>

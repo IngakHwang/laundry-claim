@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} — 세탁 티켓{% endblock %}
+{% block body %}
+<h1>{{ c.name }} <span class="badge b-type">{{ c.biz_type }}</span></h1>
+<p class="meta">{{ c.factory_name }} 담당 · {% if c.rooms %}객실(침상) {{ c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(c.daily_kg) }}kg</p>
+{% if c.note %}<div class="instr">📌 상시 특이사항: {{ c.note }}</div>{% endif %}
+<p class="meta" style="margin-top:8px">
+  취급 품목: {% for it in goods %}{{ it.name }} {{ "{:,}".format(it.daily_qty) }}장{{ " · " if not loop.last }}{% endfor %}
+</p>
+
+<div class="stats">
+  <div class="stat"><b>{{ stats.total }}</b><span>누적 이슈</span></div>
+  <div class="stat"><b>{{ open_tickets|length }}</b><span>미완료</span></div>
+  <div class="stat"><b>{{ stats.avg_hours if stats.avg_hours is not none else "—" }}</b><span>평균 처리(시간)</span></div>
+  <div class="stat"><b>
+    {% for row in by_type %}{{ TYPE_LABEL[row.type] }} {{ row.n }}{{ " · " if not loop.last }}{% else %}—{% endfor %}
+  </b><span>유형별</span></div>
+</div>
+
+<h2>진행 중인 이슈 ({{ open_tickets|length }}건)</h2>
+{% for t in open_tickets %}
+<a class="card {{ 'urgent' if t.severity == 'urgent' }}" href="/c/{{ t.id }}">
+  {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
+  <span class="badge b-status-{{ t.status }}">{{ STATUS_LABEL[t.status] }}</span>
+  <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
+  <b>#{{ t.id }}</b> {{ t.content }}
+  <span class="meta">담당 {{ t.assignee_name or "미배정" }} · {{ t.created_at }} {{ t.channel }} 접수</span>
+</a>
+{% else %}
+<p class="meta">진행 중인 이슈가 없습니다. 🎉</p>
+{% endfor %}
+
+<h2>완료된 이력 ({{ done_tickets|length }}건)</h2>
+{% for t in done_tickets %}
+<a class="card" href="/c/{{ t.id }}">
+  <span class="badge b-status-done">완료</span>
+  <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
+  <b>#{{ t.id }}</b> {{ t.content }}
+  <span class="meta">{{ t.created_at }} 접수 → {{ t.done_at }} 완료 · 담당 {{ t.assignee_name }}</span>
+</a>
+{% else %}
+<p class="meta">완료된 이력이 아직 없습니다.</p>
+{% endfor %}
+{% endblock %}

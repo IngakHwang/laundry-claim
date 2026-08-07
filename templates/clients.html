@@ -8,13 +8,13 @@
 <h2><a href="/f/{{ f.id }}">{{ f.name }} →</a> <span class="meta">— {{ f.note }}</span></h2>
 <p class="meta">하루 물량 합계 약 <b>{{ "{:,}".format(totals[f.id]) }}kg</b></p>
 {% for c in clients if c.factory_id == f.id %}
-<div class="card">
+<a class="card" href="/client/{{ c.id }}">
   <b>{{ c.name }}</b> <span class="badge b-type">{{ c.biz_type }}</span>
   <span class="meta">
-    {% if c.rooms %}객실(침상) {{ c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(c.daily_kg) }}kg
+    {% if c.rooms %}객실(침상) {{ c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(c.daily_kg) }}kg — 이슈 이력 보기 →
   </span>
   {% if c.note %}<div class="instr">📌 상시 특이사항: {{ c.note }}</div>{% endif %}
-</div>
+</a>
 {% endfor %}
 {% endfor %}
 {% endblock %}
