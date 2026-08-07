@@ -30,11 +30,12 @@
 </a>
 {% endfor %}
 
-<h2>인력 ({{ staff|length }}명)</h2>
+<h2>인력 ({{ staff|length }}명) <span class="meta">— 누르면 그 사람에게 배정된 것이 보입니다</span></h2>
 {% for s in staff %}
-<div class="card">
+<a class="card" href="/me/{{ s.id }}">
   <b>{{ s.name }}</b> <span class="badge b-type">{{ ROLE_LABEL[s.role] }}</span>
+  {% if open_by_staff.get(s.id) %}<span class="badge b-status-working">배정 {{ open_by_staff[s.id] }}건</span>{% endif %}
   <span class="meta">{{ s.duty }} · {{ s.phone }} · {{ s.hired_at }} 입사</span>
-</div>
+</a>
 {% endfor %}
 {% endblock %}

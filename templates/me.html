@@ -21,28 +21,44 @@
   </div>
   {% endfor %}
 
-  {% if t.status == 'new' %}
-  <form method="post" action="/c/{{ t.id }}/action">
-    <input type="hidden" name="kind" value="ack">
-    <input type="hidden" name="content" value="지시 확인">
-    <button class="small" type="submit">✅ 확인했습니다</button>
-  </form>
-  {% else %}
-  <form method="post" action="/c/{{ t.id }}/action" enctype="multipart/form-data">
-    <label>처리 내용</label>
-    <textarea name="content" placeholder="예: 섞인 수건 12장 회수 완료"></textarea>
-    <label>사진 (선택, 여러 장 가능) — 처리 증빙</label>
-    <input type="file" name="photos" accept="image/*" capture="environment" multiple>
-    <select name="kind">
-      <option value="work">처리 보고 (계속 진행)</option>
-      <option value="done">완료 처리</option>
-    </select>
-    <button class="small" type="submit">기록하기</button>
-  </form>
+  {% if is_self %}
+    {% if t.status == 'new' %}
+    <form method="post" action="/c/{{ t.id }}/action">
+      <input type="hidden" name="kind" value="ack">
+      <input type="hidden" name="content" value="지시 확인">
+      <button class="small" type="submit">✅ 확인했습니다</button>
+    </form>
+    {% else %}
+    <form method="post" action="/c/{{ t.id }}/action" enctype="multipart/form-data">
+      <label>처리 내용</label>
+      <textarea name="content" placeholder="예: 섞인 수건 12장 회수 완료"></textarea>
+      <label>사진 (선택, 여러 장 가능) — 처리 증빙</label>
+      <input type="file" name="photos" accept="image/*" capture="environment" multiple>
+      <select name="kind">
+        <option value="work">처리 보고 (계속 진행)</option>
+        <option value="done">완료 처리</option>
+      </select>
+      <button class="small" type="submit">기록하기</button>
+    </form>
+    {% endif %}
   {% endif %}
   <a class="meta" href="/c/{{ t.id }}">전체 이력 보기 →</a>
 </div>
 {% else %}
 <p class="meta">배정된 티켓이 없습니다. 🎉</p>
 {% endfor %}
+
+<details class="fold">
+<summary>완료한 이력 ({{ done_tickets|length }}건)</summary>
+{% for t in done_tickets %}
+<a class="card" href="/c/{{ t.id }}">
+  <span class="badge b-status-done">완료</span>
+  <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
+  <b>#{{ t.id }} {{ t.client_name }}</b> — {{ t.content }}
+  <span class="meta">{{ t.created_at }} 접수 → {{ t.done_at }} 완료</span>
+</a>
+{% else %}
+<p class="meta">완료한 이력이 아직 없습니다.</p>
+{% endfor %}
+</details>
 {% endblock %}

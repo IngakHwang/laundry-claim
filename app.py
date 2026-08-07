@@ -303,6 +303,60 @@ def init_db() -> None:
             ("사장", "register", "스테이노원 프런트 전화", "2026-08-06 09:50", []),
             ("사장", "instruct", "2호차 노선 순서 조정 검토", "2026-08-06 09:55", []),
         ], "new")
+        # ── 추가분: 여러 인력·여러 날짜에 걸친 이력 (인력별 배정 화면이 의미 있으려면 골고루 필요) ──
+        add_ticket(2, "quality", "normal", "가운 허리끈 6개가 세탁 후 사라졌다는 항의",
+                   "전화", "문채원", "2026-08-02 11:20", [
+            ("사장", "register", "리버사이드 하우스키핑 전화", "2026-08-02 11:20", []),
+            ("문채원", "work", "포장 라인 점검 — 끈 분리 세탁분이 별도 망에 있었음", "2026-08-02 14:00", []),
+            ("문채원", "done", "6개 전량 찾아 당일 재납품", "2026-08-02 16:30", []),
+        ], "done", "2026-08-02 16:30")
+        add_ticket(3, "delivery", "normal", "납품이 이틀 연속 오전 11시를 넘겼다는 항의",
+                   "문자", "정노선", "2026-08-03 09:10", [
+            ("사장", "register", "엠스테이션 지배인 문자", "2026-08-03 09:10", []),
+            ("정노선", "ack", "지시 확인", "2026-08-03 09:30", []),
+            ("정노선", "done", "3호차 출발 순서를 바꿔 9시 30분 납품으로 조정", "2026-08-03 13:00", []),
+        ], "done", "2026-08-03 13:00")
+        add_ticket(4, "quality", "normal", "시트 구김이 심해 다시 다려달라는 요청 (20장)",
+                   "전화", "한가람", "2026-08-06 15:40", [
+            ("사장", "register", "호텔더블유 프런트 전화", "2026-08-06 15:40", []),
+            ("한가람", "ack", "지시 확인", "2026-08-06 16:00", []),
+            ("한가람", "work", "롤러 온도 재설정 후 재다림 중", "2026-08-06 17:10", []),
+        ], "working")
+        add_ticket(8, "delivery", "urgent", "오늘 수거를 안 왔다는 연락 — 세탁물이 쌓여 있음",
+                   "전화", "최배송", "2026-08-01 17:30", [
+            ("사장", "register", "클라우드모텔 사장님 전화", "2026-08-01 17:30", []),
+            ("최배송", "ack", "지시 확인 — 노선 착오였음", "2026-08-01 17:45", []),
+            ("최배송", "done", "당일 저녁 수거 완료, 다음날 우선 납품", "2026-08-01 19:20", []),
+        ], "done", "2026-08-01 19:20")
+        add_ticket(5, "quality", "normal", "베개피 30장이 수량 부족으로 납품됨",
+                   "문자", "박정리", "2026-07-31 10:00", [
+            ("사장", "register", "스테이노원 문자", "2026-07-31 10:00", []),
+            ("박정리", "work", "포장 대수 대조 — 다른 호텔 묶음에 섞여 나간 것 확인", "2026-07-31 11:30", []),
+            ("박정리", "done", "30장 회수·재납품, 포장 검수 절차에 수량 체크 추가", "2026-07-31 15:00", []),
+        ], "done", "2026-07-31 15:00")
+        add_ticket(1, "etc", "normal", "빈 세탁망 40개를 다음 수거 때 돌려달라는 요청",
+                   "전화", "한기동", f"{today} 11:50", [
+            ("사장", "register", "그랜드한강 하우스키핑 전화", f"{today} 11:50", []),
+            ("사장", "instruct", "4호차 내일 적재분에 세탁망 40개 포함", f"{today} 11:52", []),
+        ], "new")
+        add_ticket(9, "delivery", "urgent", "금요일 행사가 목요일로 앞당겨짐 — 납품 하루 앞당겨달라",
+                   "전화", "나운전", "2026-08-06 16:20", [
+            ("사장", "register", "웨딩홀 매니저 전화", "2026-08-06 16:20", []),
+            ("나운전", "ack", "지시 확인", "2026-08-06 16:40", []),
+            ("나운전", "work", "목요일 오전 배송으로 일정 재편성 중", "2026-08-06 17:30", []),
+        ], "working")
+        add_ticket(10, "quality", "normal", "침대패드 4장에 누런 얼룩 — 교체 요청",
+                   "문자", "고아라", "2026-08-05 13:10", [
+            ("사장", "register", "리조트 하우스키핑 문자", "2026-08-05 13:10", ["demo_towel_yellow.png"]),
+            ("고아라", "work", "재세탁 시험 — 오래된 얼룩이라 표백 처리", "2026-08-05 15:00", []),
+            ("고아라", "done", "2장 복원, 2장은 폐기 후 신품 교체", "2026-08-05 18:20", []),
+        ], "done", "2026-08-05 18:20")
+        add_ticket(9, "quality", "normal", "냅킨 100장 다림 상태 불량 — 행사용으로 못 쓴다는 항의",
+                   "전화", "전상국", "2026-08-02 10:40", [
+            ("사장", "register", "웨딩홀 매니저 전화", "2026-08-02 10:40", []),
+            ("전상국", "work", "재다림 진행", "2026-08-02 13:00", []),
+            ("전상국", "done", "전량 재다림 후 당일 납품", "2026-08-02 16:00", []),
+        ], "done", "2026-08-02 16:00")
     con.commit()
     con.close()
 
@@ -566,14 +620,16 @@ def factory_detail(request: Request, factory_id: int):
     open_tickets = con.execute(TICKET_SELECT + """
         WHERE c.status != 'done' AND cl.factory_id = ?
         ORDER BY (c.severity='urgent') DESC, c.created_at ASC""", (factory_id,)).fetchall()
-    # 인력 명단 (공장장 → 기사 → 인력 순)
+    # 인력 명단 (공장장 → 기사 → 인력 순) + 각자의 미완료 배정 건수
     staff = con.execute("""SELECT * FROM staff WHERE factory_id=?
         ORDER BY CASE role WHEN 'manager' THEN 0 WHEN 'driver' THEN 1 ELSE 2 END, name""",
         (factory_id,)).fetchall()
+    open_by_staff = dict(con.execute("""SELECT assignee_id, COUNT(*) FROM complaints
+        WHERE status != 'done' AND assignee_id IS NOT NULL GROUP BY assignee_id""").fetchall())
     con.close()
     return templates.TemplateResponse(request, "factory.html", {
         "f": factory, "client_rows": client_rows, "total_kg": total_kg,
-        "open_tickets": open_tickets, "staff": staff,
+        "open_tickets": open_tickets, "staff": staff, "open_by_staff": open_by_staff,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL, "ROLE_LABEL": ROLE_LABEL,
     })
 
@@ -725,18 +781,24 @@ def me_home(request: Request):
 
 @app.get("/me/{staff_id}")
 def my_tickets(request: Request, staff_id: int):
-    """내 티켓 — 나에게 배정된 미완료 티켓. 기사가 폰으로 여는 화면.
-    본인 것만 볼 수 있고, 본사만 남의 것도 볼 수 있다."""
+    """내 티켓 — 배정된 미완료 티켓. 기사가 폰으로 여는 화면.
+    볼 수 있는 사람: 본인 · 본사(전부) · 공장장(자기 공장 인력만)."""
     user = require_user(request)
     if user is None:
         return RedirectResponse("/login", status_code=303)
-    if user["role"] != "owner" and user["id"] != staff_id:
-        return RedirectResponse(f"/me/{user['id']}", status_code=303)
     con = db()
     me = con.execute("SELECT * FROM staff WHERE id=?", (staff_id,)).fetchone()
+    allowed = (user["role"] == "owner" or user["id"] == staff_id
+               or (user["role"] == "manager" and me and me["factory_id"] == user["factory_id"]))
+    if me is None or not allowed:
+        con.close()
+        return RedirectResponse(f"/me/{user['id']}", status_code=303)
     tickets = con.execute(TICKET_SELECT + """
         WHERE c.assignee_id=? AND c.status != 'done'
         ORDER BY (c.severity='urgent') DESC, c.created_at ASC""", (staff_id,)).fetchall()
+    done_tickets = con.execute(TICKET_SELECT + """
+        WHERE c.assignee_id=? AND c.status = 'done'
+        ORDER BY c.done_at DESC LIMIT 10""", (staff_id,)).fetchall()
     # 티켓마다 지시 내용과 접수 사진을 같이 보여준다 (기사가 봐야 할 핵심)
     instructions = {}
     for t in tickets:
@@ -753,6 +815,7 @@ def my_tickets(request: Request, staff_id: int):
         instructions[t["id"]] = items
     con.close()
     return templates.TemplateResponse(request, "me.html", {
-        "me": me, "tickets": tickets, "instructions": instructions,
+        "me": me, "tickets": tickets, "done_tickets": done_tickets,
+        "instructions": instructions, "is_self": user["id"] == staff_id,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL, "ROLE_LABEL": ROLE_LABEL,
     })
