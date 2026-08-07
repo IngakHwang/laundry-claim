@@ -18,7 +18,7 @@
   <span class="badge b-status-{{ t.status }}">{{ STATUS_LABEL[t.status] }}</span>
   <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
   <b>#{{ t.id }} {{ t.client_name }}</b> — {{ t.content }}
-  <span class="meta">담당 {{ t.assignee_name or "미배정" }} · {{ t.created_at }} {{ t.channel }} 접수</span>
+  <span class="meta">{{ t.factory_name }} · 담당 {{ t.assignee_name or "미배정" }} · {{ t.created_at }} {{ t.channel }} 접수</span>
 </a>
 {% else %}
 <p class="meta">미완료 컴플레인이 없습니다. 🎉</p>

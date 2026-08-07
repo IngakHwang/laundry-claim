@@ -44,7 +44,7 @@ TYPE_LABEL = {"quality": "세탁 품질", "delivery": "배송", "etc": "기타"}
 STATUS_LABEL = {"new": "접수", "acked": "확인됨", "working": "처리중", "done": "완료"}
 KIND_LABEL = {"register": "접수", "instruct": "지시", "ack": "확인",
               "work": "처리 보고", "done": "완료 처리", "note": "메모"}
-ROLE_LABEL = {"factory": "공장", "driver": "배송기사"}
+ROLE_LABEL = {"manager": "공장장", "factory": "공장", "driver": "배송기사"}
 
 
 def now() -> str:
@@ -93,15 +93,25 @@ def init_db() -> None:
     """표 4장을 만들고, 비어 있으면 시연용 예시 데이터를 넣는다."""
     con = db()
     con.executescript("""
-    CREATE TABLE IF NOT EXISTS clients (      -- 거래처
+    CREATE TABLE IF NOT EXISTS factories (    -- 공장 — 거래처와 인력이 여기 소속된다
         id   INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
-        note TEXT DEFAULT ''                  -- 상시 특이사항 ("이불은 항상 개별 포장" 같은 것)
+        note TEXT DEFAULT ''                  -- 인력 구성 같은 요약
     );
-    CREATE TABLE IF NOT EXISTS staff (        -- 담당자 (공장 직원 + 배송기사를 한 표에, role로 구분)
-        id   INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('factory','driver'))
+    CREATE TABLE IF NOT EXISTS clients (      -- 거래처
+        id         INTEGER PRIMARY KEY,
+        factory_id INTEGER REFERENCES factories(id),   -- 어느 공장이 처리하나
+        name       TEXT NOT NULL,
+        biz_type   TEXT DEFAULT '',           -- 업태 (관광호텔·모텔·요양병원…)
+        rooms      INTEGER DEFAULT 0,         -- 객실(침상) 수 — 물량 추정의 근거
+        daily_kg   INTEGER DEFAULT 0,         -- 하루 물량 추정(kg)
+        note       TEXT DEFAULT ''            -- 상시 특이사항 ("이불은 항상 개별 포장" 같은 것)
+    );
+    CREATE TABLE IF NOT EXISTS staff (        -- 담당자 (공장장·공장 인력·배송기사를 한 표에, role로 구분)
+        id         INTEGER PRIMARY KEY,
+        factory_id INTEGER REFERENCES factories(id),
+        name       TEXT NOT NULL,
+        role       TEXT NOT NULL CHECK (role IN ('manager','factory','driver'))
     );
     CREATE TABLE IF NOT EXISTS complaints (   -- 컴플레인 티켓 (이 시스템의 중심 개체)
         id          INTEGER PRIMARY KEY,
@@ -137,34 +147,59 @@ def init_db() -> None:
                        SELECT id, photo FROM actions WHERE photo != ''""")
         con.execute("ALTER TABLE actions DROP COLUMN photo")
     # 비어 있을 때만 예시 데이터 (시연용 — 실제 도입 시 지우면 됨)
+    # ⚠️ 업체 이름은 전부 가상이다. 실존 호텔·모텔의 「유형과 규모」만 본떴다 —
+    #    실명에 지어낸 컴플레인을 붙여 공개 배포하면 그 업체에 대한 허위 기록이 되기 때문.
     if con.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 0:
-        con.executemany("INSERT INTO clients (name, note) VALUES (?,?)", [
-            ("한강호텔", "이불류는 항상 개별 포장"),
-            ("도봉요양원", "수거 시 오염물 분리 확인"),
-            ("삼겹살집 청춘", "수건 수량 매번 대조"),
+        con.executemany("INSERT INTO factories (id, name, note) VALUES (?,?,?)", [
+            (1, "제1공장 (창동)", "공장장 1 + 인력 16 + 기사 2 · 담당 8개 업체 · 월 매출 약 1.6억 가정(업체당 약 2천만)"),
+            (2, "제2공장 (의정부)", "공장장 1 + 인력 4 + 기사 1 · 담당 2개 업체"),
         ])
-        con.executemany("INSERT INTO staff (name, role) VALUES (?,?)", [
-            ("김공장", "factory"), ("이다림", "factory"),
-            ("박기사", "driver"), ("최배송", "driver"),
+        # 하루 물량 추정 공식: 객실수 × 가동률 70% × 객실당 리넨 약 4kg
+        # (요양병원 = 침상 × 3kg, 웨딩홀 = 행사 기준이라 객실수 0)
+        con.executemany("""INSERT INTO clients
+            (factory_id, name, biz_type, rooms, daily_kg, note) VALUES (?,?,?,?,?,?)""", [
+            (1, "그랜드한강호텔",        "관광호텔",     350, 980, "이불류는 항상 개별 포장"),
+            (1, "수유 리버사이드호텔",   "관광호텔",     300, 840, ""),
+            (1, "의정부 엠스테이션호텔", "비즈니스호텔", 200, 560, "고객 유실물 발견 시 즉시 보고"),
+            (1, "창동 호텔더블유",       "비즈니스호텔", 180, 500, ""),
+            (1, "스테이노원",            "비즈니스호텔", 150, 420, ""),
+            (1, "강북성심요양병원",      "요양병원",     300, 900, "환자복·시트 분리 수거, 감염성 세탁물 별도 처리"),
+            (1, "도봉 베뉴모텔",         "모텔",          60, 170, ""),
+            (1, "미아 클라우드모텔",     "모텔",          45, 130, ""),
+            (2, "의정부 그랜드컨벤션",   "웨딩홀·연회",    0, 600, "행사 일정 따라 물량 변동 큼 — 주말 집중"),
+            (2, "포천 힐스파리조트",     "온천리조트",   120, 340, "주말 물량 2배"),
         ])
+        # 인력: 제1공장 공장장1+16, 제2공장 공장장1+4, 기사 3 (1공장 2·2공장 1)
+        rows = [(1, "강만석", "manager"), (2, "윤정례", "manager")]
+        rows += [(1, n, "factory") for n in [
+            "김세탁", "이다림", "박정리", "최민수", "정호영", "한가람", "오세훈", "서지우",
+            "남기웅", "문채원", "임태호", "조성민", "배수지", "신동엽", "권나라", "황보라"]]
+        rows += [(2, n, "factory") for n in ["장미란", "전상국", "고아라", "유병재"]]
+        rows += [(1, "박기사", "driver"), (1, "최배송", "driver"), (2, "나운전", "driver")]
+        con.executemany("INSERT INTO staff (factory_id, name, role) VALUES (?,?,?)", rows)
+
+        def sid(name):
+            """이름으로 담당자 id 찾기 (예시 티켓 배정용)."""
+            return con.execute("SELECT id FROM staff WHERE name=?", (name,)).fetchone()[0]
+
         # 예시 티켓 1: 배송 컴플레인 — 기사에게 배정, 아직 미확인
         con.execute("""INSERT INTO complaints
             (client_id, type, severity, content, channel, assignee_id, status, created_at)
             VALUES (1, 'delivery', 'urgent', '어제 납품분에 다른 업체 수건이 섞여 왔음. 회수 요청.',
-                    '전화', 3, 'new', ?)""", (now(),))
+                    '전화', ?, 'new', ?)""", (sid("박기사"), now()))
         con.execute("""INSERT INTO actions (complaint_id, actor, kind, content, created_at)
-            VALUES (1, '사장', 'register', '한강호텔 지배인 전화 접수', ?)""", (now(),))
+            VALUES (1, '사장', 'register', '그랜드한강호텔 지배인 전화 접수', ?)""", (now(),))
         con.execute("""INSERT INTO actions (complaint_id, actor, kind, content, created_at)
             VALUES (1, '사장', 'instruct', '오늘 수거 때 섞인 수건 회수해 올 것', ?)""", (now(),))
-        # 예시 티켓 2: 품질 컴플레인 — 공장 직원에게 배정, 처리중
+        # 예시 티켓 2: 품질 컴플레인 — 공장 인력에게 배정, 처리중
         con.execute("""INSERT INTO complaints
             (client_id, type, severity, content, channel, assignee_id, status, created_at)
-            VALUES (2, 'quality', 'normal', '환자복 소매 얼룩이 안 빠진 채 납품됨 (3벌)',
-                    '문자', 1, 'working', ?)""", (now(),))
+            VALUES (6, 'quality', 'normal', '환자복 소매 얼룩이 안 빠진 채 납품됨 (3벌)',
+                    '문자', ?, 'working', ?)""", (sid("김세탁"), now()))
         con.execute("""INSERT INTO actions (complaint_id, actor, kind, content, created_at)
-            VALUES (2, '사장', 'register', '요양원 문자 접수, 사진 3장 받음', ?)""", (now(),))
+            VALUES (2, '사장', 'register', '요양병원 문자 접수, 사진 3장 받음', ?)""", (now(),))
         con.execute("""INSERT INTO actions (complaint_id, actor, kind, content, created_at)
-            VALUES (2, '김공장', 'work', '재세탁 진행. 얼룩 종류가 녹 계열이라 전용 처리 필요', ?)""", (now(),))
+            VALUES (2, '김세탁', 'work', '재세탁 진행. 얼룩 종류가 녹 계열이라 전용 처리 필요', ?)""", (now(),))
     con.commit()
     con.close()
 
@@ -174,9 +209,11 @@ init_db()
 
 # ── 공통: 티켓 목록을 화면용으로 읽는 SQL (거래처·담당자 이름까지 JOIN) ──
 TICKET_SELECT = """
-SELECT c.*, cl.name AS client_name, s.name AS assignee_name, s.role AS assignee_role
+SELECT c.*, cl.name AS client_name, s.name AS assignee_name, s.role AS assignee_role,
+       f.name AS factory_name
 FROM complaints c
 JOIN clients cl ON cl.id = c.client_id
+LEFT JOIN factories f ON f.id = cl.factory_id
 LEFT JOIN staff s ON s.id = c.assignee_id
 """
 
@@ -212,14 +249,35 @@ def dashboard(request: Request):
 
 @app.get("/new")
 def new_form(request: Request):
-    """컴플레인 접수 폼 — 거래처·담당자 목록을 DB에서 채워 보여준다."""
+    """컴플레인 접수 폼 — 거래처·담당자 목록을 공장별로 묶어 보여준다."""
     con = db()
-    clients = con.execute("SELECT * FROM clients ORDER BY name").fetchall()
-    staff = con.execute("SELECT * FROM staff ORDER BY role, name").fetchall()
+    clients = con.execute("""SELECT c.*, f.name AS factory_name FROM clients c
+        LEFT JOIN factories f ON f.id = c.factory_id
+        ORDER BY c.factory_id, c.daily_kg DESC""").fetchall()
+    staff = con.execute("""SELECT s.*, f.name AS factory_name FROM staff s
+        LEFT JOIN factories f ON f.id = s.factory_id
+        ORDER BY s.factory_id, CASE s.role WHEN 'manager' THEN 0 WHEN 'driver' THEN 1 ELSE 2 END, s.name""").fetchall()
     con.close()
     return templates.TemplateResponse(request, "new.html", {
         "clients": clients, "staff": staff,
         "TYPE_LABEL": TYPE_LABEL, "ROLE_LABEL": ROLE_LABEL,
+    })
+
+
+@app.get("/clients")
+def client_list(request: Request):
+    """거래처 현황 — 공장별로 묶어 업태·객실수·하루 물량 추정을 보여준다."""
+    con = db()
+    factories = con.execute("SELECT * FROM factories ORDER BY id").fetchall()
+    clients = con.execute("""SELECT c.*, f.name AS factory_name FROM clients c
+        LEFT JOIN factories f ON f.id = c.factory_id
+        ORDER BY c.factory_id, c.daily_kg DESC""").fetchall()
+    # 공장별 하루 물량 합계 (인력 대비 처리량을 한눈에 보려고)
+    totals = {f["id"]: sum(c["daily_kg"] for c in clients if c["factory_id"] == f["id"])
+              for f in factories}
+    con.close()
+    return templates.TemplateResponse(request, "clients.html", {
+        "factories": factories, "clients": clients, "totals": totals,
     })
 
 

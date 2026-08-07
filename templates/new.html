@@ -5,7 +5,11 @@
 <form class="box" method="post" action="/new" enctype="multipart/form-data">
   <label>거래처</label>
   <select name="client_id" required>
-    {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+    {% for factory_name, items in clients|groupby('factory_name') %}
+    <optgroup label="{{ factory_name }}">
+      {% for c in items %}<option value="{{ c.id }}">{{ c.name }} ({{ c.biz_type }}{% if c.rooms %} · {{ c.rooms }}실{% endif %})</option>{% endfor %}
+    </optgroup>
+    {% endfor %}
   </select>
 
   <label>유형</label>
@@ -29,7 +33,11 @@
 
   <label>담당자 배정</label>
   <select name="assignee_id" required>
-    {% for s in staff %}<option value="{{ s.id }}">[{{ ROLE_LABEL[s.role] }}] {{ s.name }}</option>{% endfor %}
+    {% for factory_name, items in staff|groupby('factory_name') %}
+    <optgroup label="{{ factory_name }}">
+      {% for s in items %}<option value="{{ s.id }}">[{{ ROLE_LABEL[s.role] }}] {{ s.name }}</option>{% endfor %}
+    </optgroup>
+    {% endfor %}
   </select>
 
   <label>사진 (선택, 여러 장 가능) — 폰에서는 바로 촬영됩니다</label>
