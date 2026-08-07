@@ -23,10 +23,11 @@
   <div class="stat"><b>{{ stats.avg_hours if stats.avg_hours is not none else "—" }}</b><span>평균 처리(시간)</span></div>
 </div>
 
-<h2>흐름 한눈에 <span class="meta">(카드를 끌어 상태를 바꿀 수 있습니다)</span></h2>
+<h2>이슈 현황판 <span class="meta">(카드를 끌어 상태를 바꿀 수 있습니다)</span></h2>
 {% include "_board.html" %}
 
-<h2>미완료 티켓</h2>
+<details class="fold">
+<summary>미완료 티켓 ({{ stats.open }}건)</summary>
 {% for t in open_tickets %}
 <a class="card {{ 'urgent' if t.severity == 'urgent' }}" href="/c/{{ t.id }}">
   {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
@@ -38,15 +39,19 @@
 {% else %}
 <p class="meta">미완료 컴플레인이 없습니다. 🎉</p>
 {% endfor %}
+</details>
 
-<h2>유형별 누적</h2>
+<details class="fold">
+<summary>유형별 누적</summary>
 <p>
 {% for row in by_type %}
   <span class="badge b-type">{{ TYPE_LABEL[row.type] }} {{ row.n }}건</span>
 {% endfor %}
 </p>
+</details>
 
-<h2>최근 완료</h2>
+<details class="fold">
+<summary>최근 완료 ({{ done_recent|length }}건)</summary>
 {% for t in done_recent %}
 <a class="card" href="/c/{{ t.id }}">
   <span class="badge b-status-done">완료</span>
@@ -56,4 +61,5 @@
 {% else %}
 <p class="meta">아직 완료된 티켓이 없습니다.</p>
 {% endfor %}
+</details>
 {% endblock %}
