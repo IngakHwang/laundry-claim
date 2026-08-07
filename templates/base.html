@@ -43,6 +43,10 @@ button.small{width:auto; padding:8px 14px; font-size:.9rem; margin-top:8px;}
 .timeline .meta{display:block;}
 .instr{background:#FFF9E8; border:1px solid #EAD9A0; border-radius:8px; padding:8px 10px; margin-top:8px; font-size:.92rem;}
 img.photo{display:block; max-width:220px; max-height:220px; border-radius:8px; margin:6px 0; border:1px solid #C9CEC4;}
+.pv-wrap{position:relative; display:inline-block; margin:8px 8px 0 0; vertical-align:top;}
+.pv-wrap img{margin:0; max-width:120px; max-height:120px;}
+.pv-del{position:absolute; top:-8px; right:-8px; width:24px; height:24px; padding:0; margin:0;
+  border-radius:50%; background:#C0392B; color:#fff; font-size:.8rem; line-height:1;}
 </style>
 </head>
 <body>
@@ -52,26 +56,59 @@ img.photo{display:block; max-width:220px; max-height:220px; border-radius:8px; m
 </header>
 <main>{% block body %}{% endblock %}</main>
 <script>
-// 사진 선택 즉시 미리보기 — 파일을 서버로 보내기 전에, 브라우저 안에서만 보여준다.
-// 원리: 선택한 파일마다 임시 주소(URL.createObjectURL)를 만들어 <img>로 늘어놓는다.
-document.addEventListener('change', function (e) {
-  if (!e.target.matches('input[type=file]')) return;
-  var input = e.target;
-  // 이전 미리보기들을 먼저 지운다 (다시 선택하면 새 목록으로 교체)
+// 사진 선택 — 누적 + 미리보기 + 장별 삭제.
+// 파일 입력칸의 기본 동작은 "다시 고르면 전에 고른 게 사라짐"이라(브라우저 표준),
+// 여기서 누적 목록(DataTransfer)을 직접 관리해서 ①나눠 골라도 쌓이고 ②✕로 한 장씩 뺄 수 있게 한다.
+// 서버로는 input.files(누적본)가 그대로 제출되므로 서버 코드는 안 바뀐다.
+var pickers = new WeakMap();   // 입력칸 → 누적 파일 목록
+
+function renderPreviews(input, dt) {
+  // 기존 미리보기를 걷어내고, 누적 목록대로 다시 그린다
   var next = input.nextElementSibling;
   while (next && next.classList && next.classList.contains('preview')) {
     var gone = next; next = next.nextElementSibling; gone.remove();
   }
-  // 선택된 파일마다 미리보기 하나씩, 입력칸 뒤에 순서대로 붙인다
   var anchor = input;
-  Array.prototype.forEach.call(input.files || [], function (file) {
+  Array.prototype.forEach.call(dt.files, function (file, i) {
+    var wrap = document.createElement('span');
+    wrap.className = 'preview pv-wrap';
     var img = document.createElement('img');
-    img.className = 'photo preview';
+    img.className = 'photo';
     img.alt = '선택한 사진 미리보기';
     img.src = URL.createObjectURL(file);
-    anchor.after(img);
-    anchor = img;
+    var del = document.createElement('button');
+    del.type = 'button';          // 폼 제출 버튼으로 오작동하지 않게
+    del.className = 'pv-del';
+    del.textContent = '✕';
+    del.title = '이 사진 빼기';
+    del.addEventListener('click', function () {
+      var nd = new DataTransfer();   // 이 한 장만 빼고 목록을 다시 만든다
+      Array.prototype.forEach.call(dt.files, function (g, j) { if (j !== i) nd.items.add(g); });
+      pickers.set(input, nd);
+      input.files = nd.files;
+      renderPreviews(input, nd);
+    });
+    wrap.appendChild(img);
+    wrap.appendChild(del);
+    anchor.after(wrap);
+    anchor = wrap;
   });
+}
+
+document.addEventListener('change', function (e) {
+  if (!e.target.matches('input[type=file]')) return;
+  var input = e.target;
+  var dt = pickers.get(input) || new DataTransfer();
+  // 새로 고른 파일을 누적 목록에 더한다 (이름+크기가 같으면 같은 파일로 보고 건너뜀)
+  Array.prototype.forEach.call(input.files || [], function (f) {
+    var dup = Array.prototype.some.call(dt.files, function (g) {
+      return g.name === f.name && g.size === f.size;
+    });
+    if (!dup) dt.items.add(f);
+  });
+  pickers.set(input, dt);
+  input.files = dt.files;        // 제출될 실제 목록을 누적본으로 바꿔치기
+  renderPreviews(input, dt);
 });
 </script>
 </body>
