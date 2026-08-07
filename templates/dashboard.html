@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}공장 대시보드 — 세탁 티켓{% endblock %}
+{% block title %}공장 대시보드 — 세탁 클레임{% endblock %}
 {% block head %}<meta http-equiv="refresh" content="15">{% endblock %}
 {% block body %}
 <h1>공장 대시보드 <span class="meta">(15초마다 자동 갱신 — 모니터에 띄워두는 화면)</span></h1>
@@ -17,17 +17,17 @@
 {% endif %}
 
 <div class="stats">
-  <div class="stat"><b>{{ stats.open }}</b><span>미완료</span></div>
-  <div class="stat"><b>{{ stats.unacked }}</b><span>담당자 미확인</span></div>
-  <div class="stat"><b>{{ stats.today }}</b><span>오늘 접수</span></div>
-  <div class="stat"><b>{{ stats.avg_hours if stats.avg_hours is not none else "—" }}</b><span>평균 처리(시간)</span></div>
+  <a class="stat" href="#sec-open"><b>{{ stats.open }}</b><span>미완료 ↓</span></a>
+  <a class="stat" href="#col-new"><b>{{ stats.unacked }}</b><span>담당자 미확인 ↓</span></a>
+  <a class="stat" href="#board-top"><b>{{ stats.today }}</b><span>오늘 접수 ↓</span></a>
+  <a class="stat" href="#sec-done"><b>{{ stats.avg_hours if stats.avg_hours is not none else "—" }}</b><span>평균 처리(시간) ↓</span></a>
 </div>
 
-<h2>이슈 현황판 <span class="meta">(카드를 끌어 상태를 바꿀 수 있습니다)</span></h2>
+<h2 id="board-top">클레임 현황판 <span class="meta">(카드를 끌어 상태를 바꿀 수 있습니다)</span></h2>
 {% include "_board.html" %}
 
-<details class="fold">
-<summary>미완료 티켓 ({{ stats.open }}건)</summary>
+<details class="fold" id="sec-open">
+<summary>미완료 클레임 ({{ stats.open }}건)</summary>
 {% for t in open_tickets %}
 <a class="card {{ 'urgent' if t.severity == 'urgent' }}" href="/c/{{ t.id }}">
   {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
@@ -37,7 +37,7 @@
   <span class="meta">{{ t.factory_name }} · 담당 {{ t.assignee_name or "미배정" }} · {{ t.created_at }} {{ t.channel }} 접수</span>
 </a>
 {% else %}
-<p class="meta">미완료 컴플레인이 없습니다. 🎉</p>
+<p class="meta">미완료 클레임이 없습니다. 🎉</p>
 {% endfor %}
 </details>
 
@@ -50,7 +50,7 @@
 </p>
 </details>
 
-<details class="fold">
+<details class="fold" id="sec-done">
 <summary>최근 완료 ({{ done_recent|length }}건)</summary>
 {% for t in done_recent %}
 <a class="card" href="/c/{{ t.id }}">
@@ -59,7 +59,22 @@
   <span class="meta">{{ t.created_at }} 접수 → {{ t.done_at }} 완료</span>
 </a>
 {% else %}
-<p class="meta">아직 완료된 티켓이 없습니다.</p>
+<p class="meta">아직 완료된 클레임이 없습니다.</p>
 {% endfor %}
 </details>
+
+<script>
+// 지표 클릭 = 상세로 파고들기(drill-down): 접힌 섹션이면 펴고, 그 자리로 이동해 잠깐 강조한다
+document.querySelectorAll('a.stat').forEach(function (a) {
+  a.addEventListener('click', function (e) {
+    var el = document.querySelector(a.getAttribute('href'));
+    if (!el) return;
+    e.preventDefault();
+    if (el.tagName === 'DETAILS') el.open = true;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.classList.add('flash');
+    setTimeout(function () { el.classList.remove('flash'); }, 1500);
+  });
+});
+</script>
 {% endblock %}

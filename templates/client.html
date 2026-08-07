@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ c.name }} — 세탁 티켓{% endblock %}
+{% block title %}{{ c.name }} — 세탁 클레임{% endblock %}
 {% block body %}
 <h1>{{ c.name }} <span class="badge b-type">{{ c.biz_type }}</span></h1>
 <p class="meta">{{ c.factory_name }} 담당 · {% if c.rooms %}객실(침상) {{ c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(c.daily_kg) }}kg</p>

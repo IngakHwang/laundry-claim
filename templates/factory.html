@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ f.name }} — 세탁 티켓{% endblock %}
+{% block title %}{{ f.name }} — 세탁 클레임{% endblock %}
 {% block body %}
 <h1>{{ f.name }}</h1>
 <p class="meta">{{ f.note }} · 하루 물량 합계 약 <b>{{ "{:,}".format(total_kg) }}kg</b> · <a href="/?factory={{ f.id }}">이 공장 대시보드 →</a></p>

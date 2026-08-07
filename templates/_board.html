@@ -1,7 +1,7 @@
 {# 칸반 보드 부품 — 대시보드 상단과 /board 화면이 같이 쓴다. 필요한 재료: cols, days_old, photo_n #}
 <div class="board">
   {% for status, tickets in cols.items() %}
-  <div class="col s-{{ status }}" data-status="{{ status }}">
+  <div class="col s-{{ status }}" data-status="{{ status }}" id="col-{{ status }}">
     <h3>{{ STATUS_LABEL[status] }} <span class="cnt">{{ tickets|length }}</span></h3>
     {% for t in tickets %}
     <a class="kcard {{ 'urgent' if t.severity == 'urgent' }}" draggable="true" data-id="{{ t.id }}" href="/c/{{ t.id }}">
@@ -25,7 +25,7 @@
 </div>
 
 <script>
-// 끌어놓기: 카드에서 티켓 번호를 들고 가서, 열에 놓으면 상태 변경을 서버에 보내고 화면을 새로 읽는다.
+// 끌어놓기: 카드에서 클레임 번호를 들고 가서, 열에 놓으면 상태 변경을 서버에 보내고 화면을 새로 읽는다.
 document.querySelectorAll('.kcard').forEach(function (card) {
   card.addEventListener('dragstart', function (e) {
     e.dataTransfer.setData('text/plain', card.dataset.id);

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}검색: {{ q }} — 세탁 티켓{% endblock %}
+{% block title %}검색: {{ q }} — 세탁 클레임{% endblock %}
 {% block body %}
 <h1>검색 결과 <span class="meta">「{{ q }}」 — {{ rows|length }}건</span></h1>
 {% for t in rows %}
@@ -11,6 +11,6 @@
   <span class="meta">{{ t.factory_name }} · 담당 {{ t.assignee_name or "미배정" }} · {{ t.created_at }}</span>
 </a>
 {% else %}
-<p class="meta">{% if q %}일치하는 티켓이 없습니다. 다른 낱말로 시도해 보세요.{% else %}상단 검색창에 낱말을 입력하세요.{% endif %}</p>
+<p class="meta">{% if q %}일치하는 클레임이 없습니다. 다른 낱말로 시도해 보세요.{% else %}상단 검색창에 낱말을 입력하세요.{% endif %}</p>
 {% endfor %}
 {% endblock %}

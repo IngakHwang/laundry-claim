@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{{ me.name }}의 티켓 — 세탁 티켓{% endblock %}
+{% block title %}{{ me.name }}의 클레임 — 세탁 클레임{% endblock %}
 {% block body %}
-<h1>{{ me.name }}님의 티켓 <span class="badge b-type">{{ ROLE_LABEL[me.role] }}</span></h1>
+<h1>{{ me.name }}님의 클레임 <span class="badge b-type">{{ ROLE_LABEL[me.role] }}</span></h1>
 
 {% for t in tickets %}
 <div class="card {{ 'urgent' if t.severity == 'urgent' }}">
@@ -45,7 +45,7 @@
   <a class="meta" href="/c/{{ t.id }}">전체 이력 보기 →</a>
 </div>
 {% else %}
-<p class="meta">배정된 티켓이 없습니다. 🎉</p>
+<p class="meta">배정된 클레임이 없습니다. 🎉</p>
 {% endfor %}
 
 <details class="fold">
