@@ -60,18 +60,27 @@ def db() -> sqlite3.Connection:
     return con
 
 
-def save_photo(photo: UploadFile | None) -> str:
-    """올라온 사진을 uploads\ 에 저장하고 파일명을 돌려준다. 없으면 빈 문자열.
+def save_photos(photos: list[UploadFile] | None) -> list[str]:
+    """올라온 사진들을 uploads\ 에 저장하고 파일명 목록을 돌려준다.
     왜 사진인가: "얼룩이 있대"(말)와 "여기 이 얼룩"(사진)의 차이 —
     어떤 시트의 어느 부분에 오점이 반복되는지를 직원·기사가 눈으로 알게 하려고 (2026-08-07 인각님 추가)."""
-    if photo is None or not photo.filename:
-        return ""
-    ext = Path(photo.filename).suffix.lower()
-    if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
-        return ""                      # 사진 파일만 받는다 (그 외는 조용히 무시 — v1)
-    name = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6] + ext
-    (UPLOAD_DIR / name).write_bytes(photo.file.read())
-    return name
+    names = []
+    for photo in photos or []:
+        if not photo.filename:
+            continue
+        ext = Path(photo.filename).suffix.lower()
+        if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
+            continue                   # 사진 파일만 받는다 (그 외는 조용히 무시 — v1)
+        name = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6] + ext
+        (UPLOAD_DIR / name).write_bytes(photo.file.read())
+        names.append(name)
+    return names
+
+
+def attach_photos(con: sqlite3.Connection, action_id: int, photos: list[UploadFile] | None) -> None:
+    """저장된 사진들을 조치 한 건에 매단다 (photos 표에 한 장당 한 줄)."""
+    for name in save_photos(photos):
+        con.execute("INSERT INTO photos (action_id, filename) VALUES (?,?)", (action_id, name))
 
 
 def notify(target: str, message: str) -> None:
@@ -113,15 +122,20 @@ def init_db() -> None:
         actor        TEXT NOT NULL,           -- 누가 (이름 글자 — v1은 로그인이 없으므로)
         kind         TEXT NOT NULL CHECK (kind IN ('register','instruct','ack','work','done','note')),
         content      TEXT DEFAULT '',
-        photo        TEXT DEFAULT '',          -- 첨부 사진 파일명 (uploads\ 안, 없으면 빈 값)
         created_at   TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS photos (       -- 첨부 사진 — 조치 하나에 여러 장(1:N)이라 표를 따로 둔다
+        id        INTEGER PRIMARY KEY,        -- (한 칸에 파일명 여러 개를 욱여넣으면 정규화 위반)
+        action_id INTEGER NOT NULL REFERENCES actions(id),
+        filename  TEXT NOT NULL               -- uploads\ 안의 파일명
+    );
     """)
-    # 사진 칸이 없는 옛 DB에 칸을 더한다 (이미 있으면 조용히 넘어감 — 간단한 마이그레이션)
-    try:
-        con.execute("ALTER TABLE actions ADD COLUMN photo TEXT DEFAULT ''")
-    except sqlite3.OperationalError:
-        pass
+    # 이관: 예전 판은 actions.photo 한 칸에 사진 하나였다 → photos 표로 옮기고 칸을 없앤다
+    old_cols = [row[1] for row in con.execute("PRAGMA table_info(actions)")]
+    if "photo" in old_cols:
+        con.execute("""INSERT INTO photos (action_id, filename)
+                       SELECT id, photo FROM actions WHERE photo != ''""")
+        con.execute("ALTER TABLE actions DROP COLUMN photo")
     # 비어 있을 때만 예시 데이터 (시연용 — 실제 도입 시 지우면 됨)
     if con.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 0:
         con.executemany("INSERT INTO clients (name, note) VALUES (?,?)", [
@@ -213,16 +227,17 @@ def new_form(request: Request):
 def new_submit(client_id: int = Form(...), type: str = Form(...),
                severity: str = Form("normal"), content: str = Form(...),
                channel: str = Form("전화"), assignee_id: int = Form(...),
-               instruction: str = Form(""), photo: UploadFile | None = File(None)):
-    """접수 처리: 티켓 생성 + 접수 기록(사진 첨부 가능) + (지시를 적었으면) 지시 기록 + 담당자 알림(자리)."""
+               instruction: str = Form(""), photos: list[UploadFile] = File([])):
+    """접수 처리: 티켓 생성 + 접수 기록(사진 여러 장 가능) + (지시를 적었으면) 지시 기록 + 담당자 알림(자리)."""
     con = db()
     cur = con.execute("""INSERT INTO complaints
         (client_id, type, severity, content, channel, assignee_id, status, created_at)
         VALUES (?,?,?,?,?,?, 'new', ?)""",
         (client_id, type, severity, content, channel, assignee_id, now()))
     ticket_id = cur.lastrowid
-    con.execute("INSERT INTO actions (complaint_id, actor, kind, content, photo, created_at) VALUES (?,?,?,?,?,?)",
-                (ticket_id, "사장", "register", f"{channel} 접수", save_photo(photo), now()))
+    reg = con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
+                      (ticket_id, "사장", "register", f"{channel} 접수", now()))
+    attach_photos(con, reg.lastrowid, photos)
     if instruction.strip():
         con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
                     (ticket_id, "사장", "instruct", instruction.strip(), now()))
@@ -239,10 +254,15 @@ def ticket_detail(request: Request, ticket_id: int):
     ticket = con.execute(TICKET_SELECT + " WHERE c.id=?", (ticket_id,)).fetchone()
     acts = con.execute("SELECT * FROM actions WHERE complaint_id=? ORDER BY created_at, id",
                        (ticket_id,)).fetchall()
+    # 조치별 사진 목록: {조치 id: [파일명, ...]} — 화면에서 각 조치 밑에 사진들을 붙이려고
+    photo_map = {}
+    for row in con.execute("""SELECT action_id, filename FROM photos
+        WHERE action_id IN (SELECT id FROM actions WHERE complaint_id=?)""", (ticket_id,)):
+        photo_map.setdefault(row["action_id"], []).append(row["filename"])
     staff = con.execute("SELECT * FROM staff ORDER BY role, name").fetchall()
     con.close()
     return templates.TemplateResponse(request, "ticket.html", {
-        "t": ticket, "acts": acts, "staff": staff,
+        "t": ticket, "acts": acts, "staff": staff, "photo_map": photo_map,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL, "KIND_LABEL": KIND_LABEL,
     })
 
@@ -253,11 +273,12 @@ KIND_TO_STATUS = {"ack": "acked", "work": "working", "done": "done"}
 
 @app.post("/c/{ticket_id}/action")
 def add_action(ticket_id: int, actor: str = Form(...), kind: str = Form(...),
-               content: str = Form(""), photo: UploadFile | None = File(None)):
-    """조치 기록 추가 — 일지에 한 줄 쌓고(사진 첨부 가능), 종류에 따라 티켓 상태를 옮긴다."""
+               content: str = Form(""), photos: list[UploadFile] = File([])):
+    """조치 기록 추가 — 일지에 한 줄 쌓고(사진 여러 장 가능), 종류에 따라 티켓 상태를 옮긴다."""
     con = db()
-    con.execute("INSERT INTO actions (complaint_id, actor, kind, content, photo, created_at) VALUES (?,?,?,?,?,?)",
-                (ticket_id, actor, kind, content.strip(), save_photo(photo), now()))
+    cur = con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
+                      (ticket_id, actor, kind, content.strip(), now()))
+    attach_photos(con, cur.lastrowid, photos)
     if kind in KIND_TO_STATUS:
         new_status = KIND_TO_STATUS[kind]
         con.execute("UPDATE complaints SET status=? WHERE id=?", (new_status, ticket_id))
@@ -288,10 +309,17 @@ def my_tickets(request: Request, staff_id: int):
     # 티켓마다 지시 내용과 접수 사진을 같이 보여준다 (기사가 봐야 할 핵심)
     instructions = {}
     for t in tickets:
-        rows = con.execute("""SELECT kind, content, photo, created_at FROM actions
-            WHERE complaint_id=? AND kind IN ('register','instruct') AND (kind='instruct' OR photo != '')
+        rows = con.execute("""SELECT id, kind, content, created_at FROM actions
+            WHERE complaint_id=? AND kind IN ('register','instruct')
             ORDER BY created_at""", (t["id"],)).fetchall()
-        instructions[t["id"]] = rows
+        items = []
+        for r in rows:
+            photos = [p["filename"] for p in
+                      con.execute("SELECT filename FROM photos WHERE action_id=?", (r["id"],))]
+            if r["kind"] == "instruct" or photos:   # 접수 줄은 사진이 있을 때만 보여준다
+                items.append({"kind": r["kind"], "content": r["content"],
+                              "photos": photos, "created_at": r["created_at"]})
+        instructions[t["id"]] = items
     con.close()
     return templates.TemplateResponse(request, "me.html", {
         "me": me, "tickets": tickets, "instructions": instructions,

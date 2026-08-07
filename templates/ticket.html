@@ -18,7 +18,13 @@
   {% for a in acts %}
   <li>
     <b>{{ KIND_LABEL[a.kind] }}</b> — {{ a.content }}
-    {% if a.photo %}<a href="/uploads/{{ a.photo }}" target="_blank"><img class="photo" src="/uploads/{{ a.photo }}" alt="첨부 사진"></a>{% endif %}
+    {% if photo_map.get(a.id) %}
+    <span class="photos">
+      {% for p in photo_map[a.id] %}
+      <a href="/uploads/{{ p }}" target="_blank"><img class="photo" src="/uploads/{{ p }}" alt="첨부 사진"></a>
+      {% endfor %}
+    </span>
+    {% endif %}
     <span class="meta">{{ a.actor }} · {{ a.created_at }}</span>
   </li>
   {% endfor %}
@@ -40,8 +46,8 @@
   </select>
   <label>내용</label>
   <textarea name="content" placeholder="지시·처리 내용"></textarea>
-  <label>사진 (선택)</label>
-  <input type="file" name="photo" accept="image/*" capture="environment">
+  <label>사진 (선택, 여러 장 가능)</label>
+  <input type="file" name="photos" accept="image/*" capture="environment" multiple>
   <button type="submit">기록하기</button>
 </form>
 {% endblock %}

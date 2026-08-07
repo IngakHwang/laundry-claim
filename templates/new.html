@@ -32,8 +32,8 @@
     {% for s in staff %}<option value="{{ s.id }}">[{{ ROLE_LABEL[s.role] }}] {{ s.name }}</option>{% endfor %}
   </select>
 
-  <label>사진 (선택) — 폰에서는 바로 촬영됩니다</label>
-  <input type="file" name="photo" accept="image/*" capture="environment">
+  <label>사진 (선택, 여러 장 가능) — 폰에서는 바로 촬영됩니다</label>
+  <input type="file" name="photos" accept="image/*" capture="environment" multiple>
 
   <label>담당자에게 지시 (선택)</label>
   <textarea name="instruction" placeholder="예: 오늘 수거 때 회수해 올 것"></textarea>

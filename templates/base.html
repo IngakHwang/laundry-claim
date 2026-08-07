@@ -53,21 +53,25 @@ img.photo{display:block; max-width:220px; max-height:220px; border-radius:8px; m
 <main>{% block body %}{% endblock %}</main>
 <script>
 // 사진 선택 즉시 미리보기 — 파일을 서버로 보내기 전에, 브라우저 안에서만 보여준다.
-// 원리: 선택한 파일을 가리키는 임시 주소(URL.createObjectURL)를 만들어 <img>에 꽂는다.
+// 원리: 선택한 파일마다 임시 주소(URL.createObjectURL)를 만들어 <img>로 늘어놓는다.
 document.addEventListener('change', function (e) {
   if (!e.target.matches('input[type=file]')) return;
   var input = e.target;
-  var img = input.nextElementSibling;
-  // 미리보기 <img>가 아직 없으면 입력칸 바로 뒤에 만들어 둔다
-  if (!img || !img.classList.contains('preview')) {
-    img = document.createElement('img');
+  // 이전 미리보기들을 먼저 지운다 (다시 선택하면 새 목록으로 교체)
+  var next = input.nextElementSibling;
+  while (next && next.classList && next.classList.contains('preview')) {
+    var gone = next; next = next.nextElementSibling; gone.remove();
+  }
+  // 선택된 파일마다 미리보기 하나씩, 입력칸 뒤에 순서대로 붙인다
+  var anchor = input;
+  Array.prototype.forEach.call(input.files || [], function (file) {
+    var img = document.createElement('img');
     img.className = 'photo preview';
     img.alt = '선택한 사진 미리보기';
-    input.after(img);
-  }
-  var file = input.files && input.files[0];
-  if (file) { img.src = URL.createObjectURL(file); }
-  else { img.remove(); }   // 선택을 취소하면 미리보기도 지운다
+    img.src = URL.createObjectURL(file);
+    anchor.after(img);
+    anchor = img;
+  });
 });
 </script>
 </body>
