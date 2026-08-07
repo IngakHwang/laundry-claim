@@ -44,7 +44,7 @@ TYPE_LABEL = {"quality": "세탁 품질", "delivery": "배송", "etc": "기타"}
 STATUS_LABEL = {"new": "접수", "acked": "확인됨", "working": "처리중", "done": "완료"}
 KIND_LABEL = {"register": "접수", "instruct": "지시", "ack": "확인",
               "work": "처리 보고", "done": "완료 처리", "note": "메모"}
-ROLE_LABEL = {"manager": "공장장", "factory": "공장", "driver": "배송기사"}
+ROLE_LABEL = {"owner": "본사", "manager": "공장장", "factory": "공장", "driver": "배송기사"}
 
 
 def now() -> str:
@@ -111,7 +111,7 @@ def init_db() -> None:
         id         INTEGER PRIMARY KEY,
         factory_id INTEGER REFERENCES factories(id),
         name       TEXT NOT NULL,
-        role       TEXT NOT NULL CHECK (role IN ('manager','factory','driver')),
+        role       TEXT NOT NULL CHECK (role IN ('owner','manager','factory','driver')),
         duty       TEXT DEFAULT '',           -- 담당 업무: 인력=공정(세탁·다림…), 기사=노선(1호차 창동 방면)
         phone      TEXT DEFAULT '',           -- 연락처 (전부 가짜 — v2 문자 발송이 갈 자리)
         hired_at   TEXT DEFAULT ''            -- 입사 연월
@@ -187,6 +187,7 @@ def init_db() -> None:
         duties = ["세탁", "건조", "다림(롤러)", "포장", "검수"]
         hires = ["2019-03", "2020-11", "2021-06", "2022-02", "2022-09", "2023-04", "2024-01", "2025-05"]
         rows = [
+            (None, "사장", "owner", "본사 — 두 공장 전체 총괄", "2018-01"),   # factory_id 없음 = 전체를 본다
             (1, "강만석", "manager", "제1공장 총괄 (생산·품질 책임)", "2018-05"),
             (2, "윤정례", "manager", "제2공장 총괄", "2021-01"),
         ]
@@ -309,12 +310,32 @@ def init_db() -> None:
 init_db()
 
 
-def recent_tickets():
-    """사이드바 「최근 업데이트」용 — 최근 미완료 티켓 3건 (flow의 「최근 업데이트」 자리).
-    모든 화면의 사이드바에서 부르므로 Jinja 전역 함수로 등록해 둔다 (아래)."""
+def require_user(request: Request):
+    """로그인한 담당자를 쿠키에서 찾는다. 없으면 None — 각 화면은 None이면 /login으로 보낸다.
+    ⚠️ v1은 간이 로그인이다: 서명 없는 쿠키에 담당자 번호만 담고 비밀번호가 없다.
+    목적이 「누가 무엇을 보는가」(인가)의 시연이기 때문 — 본인 증명(인증)은 공개 배포 때 판단."""
+    uid = request.cookies.get("uid", "")
+    if not uid.isdigit():
+        return None
     con = db()
-    rows = con.execute(TICKET_SELECT + """
-        WHERE c.status != 'done' ORDER BY c.created_at DESC LIMIT 3""").fetchall()
+    row = con.execute("SELECT * FROM staff WHERE id=?", (int(uid),)).fetchone()
+    con.close()
+    return row
+
+
+def scope_of(user) -> int | None:
+    """이 사용자가 볼 수 있는 공장 범위. None = 전체(본사), 숫자 = 그 공장만."""
+    return None if user["role"] == "owner" else user["factory_id"]
+
+
+def recent_tickets(user):
+    """사이드바 「최근 업데이트」용 — 최근 미완료 티켓 3건, 보는 사람의 공장 범위 안에서만."""
+    fid = scope_of(user)
+    con = db()
+    rows = con.execute(TICKET_SELECT + " WHERE c.status != 'done'"
+                       + (" AND cl.factory_id=?" if fid else "")
+                       + " ORDER BY c.created_at DESC LIMIT 3",
+                       (fid,) if fid else ()).fetchall()
     con.close()
     return rows
 
@@ -330,19 +351,54 @@ LEFT JOIN staff s ON s.id = c.assignee_id
 """
 
 
-templates.env.globals["recent_tickets"] = recent_tickets   # 사이드바가 어느 화면에서든 부르게
+# 사이드바가 어느 화면에서든 부르는 전역 함수들
+templates.env.globals["recent_tickets"] = recent_tickets
+templates.env.globals["get_user"] = require_user
+
+
+@app.get("/login")
+def login_form(request: Request):
+    """간이 로그인 — 목록에서 자기 이름을 고른다 (비밀번호 없음, 역할 시연용)."""
+    con = db()
+    staff = con.execute("""SELECT s.*, COALESCE(f.name, '본사') AS factory_name FROM staff s
+        LEFT JOIN factories f ON f.id = s.factory_id
+        ORDER BY CASE s.role WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 WHEN 'driver' THEN 2 ELSE 3 END,
+                 s.factory_id, s.name""").fetchall()
+    con.close()
+    return templates.TemplateResponse(request, "login.html",
+                                      {"staff": staff, "ROLE_LABEL": ROLE_LABEL})
+
+
+@app.post("/login")
+def login_submit(staff_id: int = Form(...)):
+    """선택한 담당자 번호를 쿠키에 담는다 — 이후 모든 화면이 이 쿠키로 범위를 정한다."""
+    resp = RedirectResponse("/", status_code=303)
+    resp.set_cookie("uid", str(staff_id))
+    return resp
+
+
+@app.get("/logout")
+def logout():
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie("uid")
+    return resp
 
 
 @app.get("/search")
 def search(request: Request, q: str = ""):
-    """상단 바 검색 — 티켓 내용·거래처 이름에서 글자 검색 (flow의 상단 검색 자리)."""
+    """상단 바 검색 — 티켓 내용·거래처 이름에서 글자 검색. 자기 공장 범위 안에서만."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    fid = scope_of(user)
     con = db()
     rows = []
     if q.strip():
         like = f"%{q.strip()}%"
-        rows = con.execute(TICKET_SELECT + """
-            WHERE c.content LIKE ? OR cl.name LIKE ?
-            ORDER BY c.created_at DESC""", (like, like)).fetchall()
+        rows = con.execute(TICKET_SELECT + " WHERE (c.content LIKE ? OR cl.name LIKE ?)"
+                           + (" AND cl.factory_id=?" if fid else "")
+                           + " ORDER BY c.created_at DESC",
+                           ((like, like, fid) if fid else (like, like))).fetchall()
     con.close()
     return templates.TemplateResponse(request, "search.html", {
         "q": q, "rows": rows,
@@ -353,7 +409,13 @@ def search(request: Request, q: str = ""):
 @app.get("/")
 def dashboard(request: Request, factory: int | None = None):
     """공장 대시보드 — 모니터에 띄워두는 화면. 미처리(urgent 먼저, 오래된 것 먼저)가 위.
-    factory 값이 있으면 그 공장 것만 보여준다 (각 공장 모니터는 자기 공장만 보면 되므로)."""
+    본사는 탭으로 공장을 고르고, 공장 사람은 자기 공장 것만 강제로 본다."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    fid = scope_of(user)
+    if fid:
+        factory = fid          # 공장 사람은 탭 파라미터와 무관하게 자기 공장만
     con = db()
     fwhere = " AND cl.factory_id = ?" if factory else ""   # 공장 필터 조각
     fargs: tuple = (factory,) if factory else ()
@@ -380,6 +442,7 @@ def dashboard(request: Request, factory: int | None = None):
         "open_tickets": open_tickets, "done_recent": done_recent,
         "stats": stats, "by_type": by_type,
         "factories": factories, "cur_factory": factory,
+        "allow_all": scope_of(user) is None,   # 본사만 공장 탭을 본다
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,
     })
 
@@ -387,9 +450,16 @@ def dashboard(request: Request, factory: int | None = None):
 @app.get("/client/{client_id}")
 def client_detail(request: Request, client_id: int):
     """거래처 상세 — 이 업체의 이슈가 무엇이 있고 어떻게 처리되고 있는지 한 화면에 추적한다."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
     con = db()
     c = con.execute("""SELECT c.*, f.name AS factory_name FROM clients c
         LEFT JOIN factories f ON f.id = c.factory_id WHERE c.id=?""", (client_id,)).fetchone()
+    fid = scope_of(user)
+    if c is None or (fid and c["factory_id"] != fid):   # 남의 공장 거래처는 못 본다
+        con.close()
+        return RedirectResponse("/clients", status_code=303)
     goods = con.execute("""SELECT i.name, ci.daily_qty FROM client_items ci
         JOIN items i ON i.id = ci.item_id WHERE ci.client_id=? ORDER BY ci.daily_qty DESC""",
         (client_id,)).fetchall()
@@ -418,6 +488,12 @@ def client_detail(request: Request, client_id: int):
 @app.get("/f/{factory_id}")
 def factory_detail(request: Request, factory_id: int):
     """공장 상세 — 이 공장의 거래처(취급 품목·특이사항), 현재 이슈, 인력 명단을 한 화면에."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    fid = scope_of(user)
+    if fid and factory_id != fid:                        # 남의 공장 페이지는 자기 공장으로 돌려보낸다
+        return RedirectResponse(f"/f/{fid}", status_code=303)
     con = db()
     factory = con.execute("SELECT * FROM factories WHERE id=?", (factory_id,)).fetchone()
     # 거래처 + 각자의 취급 품목 (많은 순으로)
@@ -447,14 +523,22 @@ def factory_detail(request: Request, factory_id: int):
 
 @app.get("/new")
 def new_form(request: Request):
-    """컴플레인 접수 폼 — 거래처·담당자 목록을 공장별로 묶어 보여준다."""
+    """컴플레인 접수 폼 — 거래처·담당자 목록을 공장별로 묶어, 자기 공장 범위 안에서만."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    fid = scope_of(user)
+    fw = " WHERE c.factory_id=?" if fid else ""
+    sw = " WHERE s.factory_id=?" if fid else " WHERE s.role != 'owner'"   # 본사는 배정 대상이 아니다
+    args = (fid,) if fid else ()
     con = db()
     clients = con.execute("""SELECT c.*, f.name AS factory_name FROM clients c
-        LEFT JOIN factories f ON f.id = c.factory_id
-        ORDER BY c.factory_id, c.daily_kg DESC""").fetchall()
+        LEFT JOIN factories f ON f.id = c.factory_id""" + fw + """
+        ORDER BY c.factory_id, c.daily_kg DESC""", args).fetchall()
     staff = con.execute("""SELECT s.*, f.name AS factory_name FROM staff s
-        LEFT JOIN factories f ON f.id = s.factory_id
-        ORDER BY s.factory_id, CASE s.role WHEN 'manager' THEN 0 WHEN 'driver' THEN 1 ELSE 2 END, s.name""").fetchall()
+        LEFT JOIN factories f ON f.id = s.factory_id""" + sw + """
+        ORDER BY s.factory_id, CASE s.role WHEN 'manager' THEN 0 WHEN 'driver' THEN 1 ELSE 2 END, s.name""",
+        args).fetchall()
     con.close()
     return templates.TemplateResponse(request, "new.html", {
         "clients": clients, "staff": staff,
@@ -464,12 +548,18 @@ def new_form(request: Request):
 
 @app.get("/clients")
 def client_list(request: Request):
-    """거래처 현황 — 공장별로 묶어 업태·객실수·하루 물량 추정을 보여준다."""
+    """거래처 현황 — 공장별로 묶어 업태·객실수·하루 물량 추정을. 자기 공장 범위 안에서만."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    fid = scope_of(user)
     con = db()
-    factories = con.execute("SELECT * FROM factories ORDER BY id").fetchall()
+    factories = con.execute("SELECT * FROM factories" + (" WHERE id=?" if fid else "") + " ORDER BY id",
+                            (fid,) if fid else ()).fetchall()
     clients = con.execute("""SELECT c.*, f.name AS factory_name FROM clients c
-        LEFT JOIN factories f ON f.id = c.factory_id
-        ORDER BY c.factory_id, c.daily_kg DESC""").fetchall()
+        LEFT JOIN factories f ON f.id = c.factory_id"""
+        + (" WHERE c.factory_id=?" if fid else "") + """
+        ORDER BY c.factory_id, c.daily_kg DESC""", (fid,) if fid else ()).fetchall()
     # 공장별 하루 물량 합계 (인력 대비 처리량을 한눈에 보려고)
     totals = {f["id"]: sum(c["daily_kg"] for c in clients if c["factory_id"] == f["id"])
               for f in factories}
@@ -480,11 +570,15 @@ def client_list(request: Request):
 
 
 @app.post("/new")
-def new_submit(client_id: int = Form(...), type: str = Form(...),
+def new_submit(request: Request, client_id: int = Form(...), type: str = Form(...),
                severity: str = Form("normal"), content: str = Form(...),
                channel: str = Form("전화"), assignee_id: int = Form(...),
                instruction: str = Form(""), photos: list[UploadFile] = File([])):
-    """접수 처리: 티켓 생성 + 접수 기록(사진 여러 장 가능) + (지시를 적었으면) 지시 기록 + 담당자 알림(자리)."""
+    """접수 처리: 티켓 생성 + 접수 기록(사진 여러 장 가능) + (지시를 적었으면) 지시 기록 + 담당자 알림(자리).
+    접수자·지시자 이름은 로그인한 사람 것을 쓴다 — 폼에서 고르는 게 아니라."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
     con = db()
     cur = con.execute("""INSERT INTO complaints
         (client_id, type, severity, content, channel, assignee_id, status, created_at)
@@ -492,11 +586,11 @@ def new_submit(client_id: int = Form(...), type: str = Form(...),
         (client_id, type, severity, content, channel, assignee_id, now()))
     ticket_id = cur.lastrowid
     reg = con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
-                      (ticket_id, "사장", "register", f"{channel} 접수", now()))
+                      (ticket_id, user["name"], "register", f"{channel} 접수", now()))
     attach_photos(con, reg.lastrowid, photos)
     if instruction.strip():
         con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
-                    (ticket_id, "사장", "instruct", instruction.strip(), now()))
+                    (ticket_id, user["name"], "instruct", instruction.strip(), now()))
     assignee = con.execute("SELECT name FROM staff WHERE id=?", (assignee_id,)).fetchone()
     con.commit(); con.close()
     notify(assignee["name"], f"새 컴플레인 #{ticket_id}")   # v2에서 SMS가 될 자리
@@ -506,8 +600,17 @@ def new_submit(client_id: int = Form(...), type: str = Form(...),
 @app.get("/c/{ticket_id}")
 def ticket_detail(request: Request, ticket_id: int):
     """티켓 상세 — 정보 + 조치 일지(시간순) + 조치 입력 폼."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
     con = db()
     ticket = con.execute(TICKET_SELECT + " WHERE c.id=?", (ticket_id,)).fetchone()
+    fid = scope_of(user)
+    if ticket is None or (fid and con.execute(
+            "SELECT factory_id FROM clients WHERE id=?", (ticket["client_id"],)
+            ).fetchone()[0] != fid):                     # 남의 공장 티켓은 못 본다
+        con.close()
+        return RedirectResponse("/", status_code=303)
     acts = con.execute("SELECT * FROM actions WHERE complaint_id=? ORDER BY created_at, id",
                        (ticket_id,)).fetchall()
     # 조치별 사진 목록: {조치 id: [파일명, ...]} — 화면에서 각 조치 밑에 사진들을 붙이려고
@@ -528,12 +631,16 @@ KIND_TO_STATUS = {"ack": "acked", "work": "working", "done": "done"}
 
 
 @app.post("/c/{ticket_id}/action")
-def add_action(ticket_id: int, actor: str = Form(...), kind: str = Form(...),
+def add_action(request: Request, ticket_id: int, kind: str = Form(...),
                content: str = Form(""), photos: list[UploadFile] = File([])):
-    """조치 기록 추가 — 일지에 한 줄 쌓고(사진 여러 장 가능), 종류에 따라 티켓 상태를 옮긴다."""
+    """조치 기록 추가 — 일지에 한 줄 쌓고(사진 여러 장 가능), 종류에 따라 티켓 상태를 옮긴다.
+    「누가」는 폼에서 받지 않고 로그인한 사람으로 박는다 — 남 이름으로 기록 못 하게."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
     con = db()
     cur = con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
-                      (ticket_id, actor, kind, content.strip(), now()))
+                      (ticket_id, user["name"], kind, content.strip(), now()))
     attach_photos(con, cur.lastrowid, photos)
     if kind in KIND_TO_STATUS:
         new_status = KIND_TO_STATUS[kind]
@@ -545,10 +652,15 @@ def add_action(ticket_id: int, actor: str = Form(...), kind: str = Form(...),
 
 
 @app.get("/me")
-def me_select(request: Request):
-    """담당자 선택 — v1의 '로그인'. 기사·직원이 자기 이름을 고른다."""
+def me_home(request: Request):
+    """내 티켓 입구 — 나는 내 것으로 바로, 본사만 담당자를 골라 볼 수 있다."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    if user["role"] != "owner":
+        return RedirectResponse(f"/me/{user['id']}", status_code=303)
     con = db()
-    staff = con.execute("SELECT * FROM staff ORDER BY role, name").fetchall()
+    staff = con.execute("SELECT * FROM staff WHERE role != 'owner' ORDER BY factory_id, role, name").fetchall()
     con.close()
     return templates.TemplateResponse(request, "me_select.html",
                                       {"staff": staff, "ROLE_LABEL": ROLE_LABEL})
@@ -556,7 +668,13 @@ def me_select(request: Request):
 
 @app.get("/me/{staff_id}")
 def my_tickets(request: Request, staff_id: int):
-    """내 티켓 — 나에게 배정된 미완료 티켓. 기사가 폰으로 여는 화면."""
+    """내 티켓 — 나에게 배정된 미완료 티켓. 기사가 폰으로 여는 화면.
+    본인 것만 볼 수 있고, 본사만 남의 것도 볼 수 있다."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    if user["role"] != "owner" and user["id"] != staff_id:
+        return RedirectResponse(f"/me/{user['id']}", status_code=303)
     con = db()
     me = con.execute("SELECT * FROM staff WHERE id=?", (staff_id,)).fetchone()
     tickets = con.execute(TICKET_SELECT + """

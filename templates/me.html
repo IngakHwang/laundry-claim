@@ -23,14 +23,12 @@
 
   {% if t.status == 'new' %}
   <form method="post" action="/c/{{ t.id }}/action">
-    <input type="hidden" name="actor" value="{{ me.name }}">
     <input type="hidden" name="kind" value="ack">
     <input type="hidden" name="content" value="지시 확인">
     <button class="small" type="submit">✅ 확인했습니다</button>
   </form>
   {% else %}
   <form method="post" action="/c/{{ t.id }}/action" enctype="multipart/form-data">
-    <input type="hidden" name="actor" value="{{ me.name }}">
     <label>처리 내용</label>
     <textarea name="content" placeholder="예: 섞인 수건 12장 회수 완료"></textarea>
     <label>사진 (선택, 여러 장 가능) — 처리 증빙</label>

@@ -88,33 +88,45 @@ img.photo{display:block; max-width:220px; max-height:220px; border-radius:8px; m
 </head>
 <body>
 <div class="shell">
+{% set user = get_user(request) %}
 <aside class="side">
   {% set p = request.url.path %}
   <div class="brand">🧺 세탁 티켓</div>
+  {% if user %}
   <a class="primary" href="/new">＋ 컴플레인 접수</a>
   <a class="{{ 'on' if p == '/' }}" href="/">📊 대시보드</a>
   <details open><summary>공장</summary>
+    {% if user.role == 'owner' %}
     <a class="{{ 'on' if p == '/f/1' }}" href="/f/1">🏭 제1공장 (창동)</a>
     <a class="{{ 'on' if p == '/f/2' }}" href="/f/2">🏭 제2공장 (의정부)</a>
+    {% else %}
+    <a class="{{ 'on' if p.startswith('/f/') }}" href="/f/{{ user.factory_id }}">🏭 내 공장</a>
+    {% endif %}
   </details>
   <details open><summary>모아보기</summary>
     <a class="{{ 'on' if p == '/clients' }}" href="/clients">🏢 거래처 현황</a>
     <a class="{{ 'on' if p.startswith('/me') }}" href="/me">👤 내 티켓</a>
   </details>
   <details open><summary>최근 업데이트</summary>
-    {% for t in recent_tickets() %}
+    {% for t in recent_tickets(user) %}
     <a class="recent" href="/c/{{ t.id }}"><span class="dot {{ 'red' if t.severity == 'urgent' }}"></span>#{{ t.id }} {{ t.client_name }}</a>
     {% else %}
     <a class="recent">미완료 없음 🎉</a>
     {% endfor %}
   </details>
+  {% endif %}
 </aside>
 <div class="content">
 <div class="topbar">
+  {% if user %}
   <form class="search" action="/search" method="get">
     <input type="search" name="q" placeholder="🔍 티켓 검색 — 내용·거래처 이름" value="{{ request.query_params.get('q', '') }}">
   </form>
-  <span class="avatar">인각</span>
+  <span class="avatar" title="{{ user.name }}">{{ user.name[:2] }}</span>
+  <a class="meta" href="/logout">로그아웃</a>
+  {% else %}
+  <span class="meta">로그인이 필요합니다</span>
+  {% endif %}
 </div>
 <main>{% block body %}{% endblock %}</main>
 </div>

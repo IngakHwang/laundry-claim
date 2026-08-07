@@ -32,11 +32,7 @@
 
 <h2>조치 추가</h2>
 <form class="box" method="post" action="/c/{{ t.id }}/action" enctype="multipart/form-data">
-  <label>누가</label>
-  <select name="actor">
-    <option>사장</option>
-    {% for s in staff %}<option>{{ s.name }}</option>{% endfor %}
-  </select>
+  <p class="meta">기록하는 사람: <b>{{ get_user(request).name }}</b> (로그인 기준 — 남 이름으로는 못 적습니다)</p>
   <label>무엇을</label>
   <select name="kind">
     <option value="instruct">지시 (어떻게 해야 하는지)</option>

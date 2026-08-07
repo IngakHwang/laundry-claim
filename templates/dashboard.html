@@ -4,6 +4,7 @@
 {% block body %}
 <h1>공장 대시보드 <span class="meta">(15초마다 자동 갱신 — 모니터에 띄워두는 화면)</span></h1>
 
+{% if allow_all %}
 <div class="tabs">
   <a class="tab {{ 'active' if not cur_factory }}" href="/">전체</a>
   {% for f in factories %}
@@ -11,6 +12,9 @@
   {% endfor %}
   {% if cur_factory %}<a class="meta" href="/f/{{ cur_factory }}">이 공장 상세 →</a>{% endif %}
 </div>
+{% elif cur_factory %}
+<p class="meta">{% for f in factories if f.id == cur_factory %}{{ f.name }} 화면입니다 (내 공장 것만 보입니다){% endfor %}</p>
+{% endif %}
 
 <div class="stats">
   <div class="stat"><b>{{ stats.open }}</b><span>미완료</span></div>
