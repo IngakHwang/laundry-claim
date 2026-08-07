@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ me.name }}의 티켓 — 세탁 티켓{% endblock %}
+{% block body %}
+<h1>{{ me.name }}님의 티켓 <span class="badge b-type">{{ ROLE_LABEL[me.role] }}</span></h1>
+
+{% for t in tickets %}
+<div class="card {{ 'urgent' if t.severity == 'urgent' }}">
+  {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
+  <span class="badge b-status-{{ t.status }}">{{ STATUS_LABEL[t.status] }}</span>
+  <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
+  <b>#{{ t.id }} {{ t.client_name }}</b> — {{ t.content }}
+  <span class="meta">{{ t.created_at }} 접수</span>
+
+  {% for i in instructions[t.id] %}
+  <div class="instr">📌 지시: {{ i.content }} <span class="meta">{{ i.created_at }}</span></div>
+  {% endfor %}
+
+  {% if t.status == 'new' %}
+  <form method="post" action="/c/{{ t.id }}/action">
+    <input type="hidden" name="actor" value="{{ me.name }}">
+    <input type="hidden" name="kind" value="ack">
+    <input type="hidden" name="content" value="지시 확인">
+    <button class="small" type="submit">✅ 확인했습니다</button>
+  </form>
+  {% else %}
+  <form method="post" action="/c/{{ t.id }}/action">
+    <input type="hidden" name="actor" value="{{ me.name }}">
+    <label>처리 내용</label>
+    <textarea name="content" placeholder="예: 섞인 수건 12장 회수 완료"></textarea>
+    <select name="kind">
+      <option value="work">처리 보고 (계속 진행)</option>
+      <option value="done">완료 처리</option>
+    </select>
+    <button class="small" type="submit">기록하기</button>
+  </form>
+  {% endif %}
+  <a class="meta" href="/c/{{ t.id }}">전체 이력 보기 →</a>
+</div>
+{% else %}
+<p class="meta">배정된 티켓이 없습니다. 🎉</p>
+{% endfor %}
+{% endblock %}

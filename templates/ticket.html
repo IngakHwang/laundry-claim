@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}#{{ t.id }} {{ t.client_name }} — 세탁 티켓{% endblock %}
+{% block body %}
+<h1>
+  #{{ t.id }} {{ t.client_name }}
+  {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
+  <span class="badge b-status-{{ t.status }}">{{ STATUS_LABEL[t.status] }}</span>
+  <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
+</h1>
+<div class="card">
+  {{ t.content }}
+  <span class="meta">담당 {{ t.assignee_name or "미배정" }} · {{ t.created_at }} {{ t.channel }} 접수
+  {% if t.done_at %} · {{ t.done_at }} 완료{% endif %}</span>
+</div>
+
+<h2>조치 일지 <span class="meta">(한 번 쓰면 안 고칩니다 — 시간순으로만 쌓입니다)</span></h2>
+<ul class="timeline">
+  {% for a in acts %}
+  <li>
+    <b>{{ KIND_LABEL[a.kind] }}</b> — {{ a.content }}
+    <span class="meta">{{ a.actor }} · {{ a.created_at }}</span>
+  </li>
+  {% endfor %}
+</ul>
+
+<h2>조치 추가</h2>
+<form class="box" method="post" action="/c/{{ t.id }}/action">
+  <label>누가</label>
+  <select name="actor">
+    <option>사장</option>
+    {% for s in staff %}<option>{{ s.name }}</option>{% endfor %}
+  </select>
+  <label>무엇을</label>
+  <select name="kind">
+    <option value="instruct">지시 (어떻게 해야 하는지)</option>
+    <option value="work">처리 보고 (어떻게 했는지) → 상태 '처리중'</option>
+    <option value="done">완료 처리 → 상태 '완료'</option>
+    <option value="note">메모</option>
+  </select>
+  <label>내용</label>
+  <textarea name="content" placeholder="지시·처리 내용"></textarea>
+  <button type="submit">기록하기</button>
+</form>
+{% endblock %}

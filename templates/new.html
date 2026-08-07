@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}컴플레인 접수 — 세탁 티켓{% endblock %}
+{% block body %}
+<h1>컴플레인 접수</h1>
+<form class="box" method="post" action="/new">
+  <label>거래처</label>
+  <select name="client_id" required>
+    {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+  </select>
+
+  <label>유형</label>
+  <select name="type">
+    {% for code, label in TYPE_LABEL.items() %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
+  </select>
+
+  <label>심각도</label>
+  <select name="severity">
+    <option value="normal">보통</option>
+    <option value="urgent">긴급</option>
+  </select>
+
+  <label>접수 경로</label>
+  <select name="channel">
+    <option>전화</option><option>문자</option><option>방문</option>
+  </select>
+
+  <label>내용 (들은 그대로)</label>
+  <textarea name="content" required placeholder="예: 어제 납품분에 다른 업체 수건이 섞여 왔음"></textarea>
+
+  <label>담당자 배정</label>
+  <select name="assignee_id" required>
+    {% for s in staff %}<option value="{{ s.id }}">[{{ ROLE_LABEL[s.role] }}] {{ s.name }}</option>{% endfor %}
+  </select>
+
+  <label>담당자에게 지시 (선택)</label>
+  <textarea name="instruction" placeholder="예: 오늘 수거 때 회수해 올 것"></textarea>
+
+  <button type="submit">접수하기</button>
+</form>
+{% endblock %}

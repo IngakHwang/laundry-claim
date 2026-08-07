@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}세탁 티켓{% endblock %}</title>
+{% block head %}{% endblock %}
+<style>
+/* 폰 화면 우선 — 기사가 이동 중에 본다. 큰 글자, 큰 버튼, 한 열. */
+*{box-sizing:border-box}
+body{font-family:"Segoe UI","Malgun Gothic",sans-serif; margin:0; background:#F4F5F2; color:#222;}
+header{background:#1F5B43; color:#fff; padding:10px 16px; display:flex; align-items:center; gap:16px;}
+header a{color:#fff; text-decoration:none; font-weight:700;}
+header nav{margin-left:auto; display:flex; gap:14px;}
+header nav a{font-weight:500; font-size:.95rem;}
+main{max-width:760px; margin:0 auto; padding:16px;}
+h1{font-size:1.25rem; margin:8px 0 14px;}
+h2{font-size:1.05rem; margin:22px 0 8px;}
+.card{background:#fff; border:1px solid #E0E3DC; border-radius:10px; padding:12px 14px; margin-bottom:10px; display:block; color:inherit; text-decoration:none;}
+a.card:hover{border-color:#1F5B43;}
+.card.urgent{border-left:5px solid #C0392B;}
+.badge{display:inline-block; border-radius:999px; padding:1px 10px; font-size:.78rem; font-weight:600; margin-right:6px;}
+.b-status-new{background:#FBEAEA; color:#C0392B;}
+.b-status-acked{background:#FFF3D6; color:#8A6100;}
+.b-status-working{background:#E3EDFA; color:#1D5FA8;}
+.b-status-done{background:#E5F2E9; color:#1F5B43;}
+.b-type{background:#EFF1EC; color:#555;}
+.b-urgent{background:#C0392B; color:#fff;}
+.meta{color:#777; font-size:.82rem;}
+.stats{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;}
+.stat{background:#fff; border:1px solid #E0E3DC; border-radius:10px; padding:8px 14px; text-align:center; flex:1; min-width:100px;}
+.stat b{display:block; font-size:1.5rem;}
+.stat span{font-size:.78rem; color:#777;}
+form.box{background:#fff; border:1px solid #E0E3DC; border-radius:10px; padding:14px;}
+label{display:block; margin:10px 0 4px; font-weight:600; font-size:.9rem;}
+input[type=text],select,textarea{width:100%; padding:9px; border:1px solid #C9CEC4; border-radius:8px; font-size:1rem; font-family:inherit;}
+textarea{min-height:70px;}
+button{background:#1F5B43; color:#fff; border:0; border-radius:8px; padding:11px 18px; font-size:1rem; font-weight:700; margin-top:12px; cursor:pointer; width:100%;}
+button.small{width:auto; padding:8px 14px; font-size:.9rem; margin-top:8px;}
+.timeline{list-style:none; padding:0; margin:0;}
+.timeline li{border-left:3px solid #C9CEC4; padding:6px 0 6px 12px; margin-left:6px;}
+.timeline b{font-size:.9rem;}
+.timeline .meta{display:block;}
+.instr{background:#FFF9E8; border:1px solid #EAD9A0; border-radius:8px; padding:8px 10px; margin-top:8px; font-size:.92rem;}
+</style>
+</head>
+<body>
+<header>
+  <a href="/">🧺 세탁 티켓</a>
+  <nav><a href="/new">＋ 접수</a><a href="/me">내 티켓</a></nav>
+</header>
+<main>{% block body %}{% endblock %}</main>
+</body>
+</html>

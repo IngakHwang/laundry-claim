@@ -1,0 +1,6 @@
+# 가상환경 — pip 로 재생성 (원본은 requirements.txt)
+.venv/
+__pycache__/
+
+# 데이터 파일 — 실행하면 예시 데이터로 다시 생긴다. 실데이터가 생기면 백업 방침을 따로 정할 것
+db.sqlite3
