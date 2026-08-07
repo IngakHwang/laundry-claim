@@ -111,7 +111,20 @@ def init_db() -> None:
         id         INTEGER PRIMARY KEY,
         factory_id INTEGER REFERENCES factories(id),
         name       TEXT NOT NULL,
-        role       TEXT NOT NULL CHECK (role IN ('manager','factory','driver'))
+        role       TEXT NOT NULL CHECK (role IN ('manager','factory','driver')),
+        duty       TEXT DEFAULT '',           -- 담당 업무: 인력=공정(세탁·다림…), 기사=노선(1호차 창동 방면)
+        phone      TEXT DEFAULT '',           -- 연락처 (전부 가짜 — v2 문자 발송이 갈 자리)
+        hired_at   TEXT DEFAULT ''            -- 입사 연월
+    );
+    CREATE TABLE IF NOT EXISTS items (        -- 품목 사전 (시트·베개피·수건…)
+        id   INTEGER PRIMARY KEY,
+        name TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS client_items ( -- 거래처별 취급 품목 — 호텔마다 구성이 다르다
+        client_id INTEGER NOT NULL REFERENCES clients(id),   -- (모텔엔 가운·발수건이 없는 식)
+        item_id   INTEGER NOT NULL REFERENCES items(id),
+        daily_qty INTEGER DEFAULT 0,          -- 하루 수량 추정(장)
+        PRIMARY KEY (client_id, item_id)
     );
     CREATE TABLE IF NOT EXISTS complaints (   -- 컴플레인 티켓 (이 시스템의 중심 개체)
         id          INTEGER PRIMARY KEY,
@@ -169,14 +182,62 @@ def init_db() -> None:
             (2, "의정부 그랜드컨벤션",   "웨딩홀·연회",    0, 600, "행사 일정 따라 물량 변동 큼 — 주말 집중"),
             (2, "포천 힐스파리조트",     "온천리조트",   120, 340, "주말 물량 2배"),
         ])
-        # 인력: 제1공장 공장장1+16, 제2공장 공장장1+4, 기사 3 (1공장 2·2공장 1)
-        rows = [(1, "강만석", "manager"), (2, "윤정례", "manager")]
-        rows += [(1, n, "factory") for n in [
-            "김세탁", "이다림", "박정리", "최민수", "정호영", "한가람", "오세훈", "서지우",
-            "남기웅", "문채원", "임태호", "조성민", "배수지", "신동엽", "권나라", "황보라"]]
-        rows += [(2, n, "factory") for n in ["장미란", "전상국", "고아라", "유병재"]]
-        rows += [(1, "박기사", "driver"), (1, "최배송", "driver"), (2, "나운전", "driver")]
-        con.executemany("INSERT INTO staff (factory_id, name, role) VALUES (?,?,?)", rows)
+        # 인력: 제1공장 공장장1+16+기사4, 제2공장 공장장1+4+기사1
+        # 공정은 세탁공장 실제 흐름(세탁→건조→다림→포장→검수)에서, 입사일은 돌려가며 배정
+        duties = ["세탁", "건조", "다림(롤러)", "포장", "검수"]
+        hires = ["2019-03", "2020-11", "2021-06", "2022-02", "2022-09", "2023-04", "2024-01", "2025-05"]
+        rows = [
+            (1, "강만석", "manager", "제1공장 총괄 (생산·품질 책임)", "2018-05"),
+            (2, "윤정례", "manager", "제2공장 총괄", "2021-01"),
+        ]
+        f1_workers = ["김세탁", "이다림", "박정리", "최민수", "정호영", "한가람", "오세훈", "서지우",
+                      "남기웅", "문채원", "임태호", "조성민", "배수지", "신동엽", "권나라", "황보라"]
+        rows += [(1, n, "factory", duties[i % 5] + " 담당", hires[i % 8]) for i, n in enumerate(f1_workers)]
+        rows += [(2, n, "factory", duties[i % 5] + " 담당", hires[(i + 3) % 8])
+                 for i, n in enumerate(["장미란", "전상국", "고아라", "유병재"])]
+        rows += [
+            (1, "박기사", "driver", "1호차 — 창동·도봉 방면", "2020-04"),
+            (1, "최배송", "driver", "2호차 — 수유·미아 방면", "2022-08"),
+            (1, "정노선", "driver", "3호차 — 의정부 방면", "2023-10"),
+            (1, "한기동", "driver", "4호차 — 대형 호텔 전담", "2024-06"),
+            (2, "나운전", "driver", "의정부·포천 방면", "2022-03"),
+        ]
+        for i, (fid, name, role, duty, hired) in enumerate(rows):
+            con.execute("INSERT INTO staff (factory_id, name, role, duty, phone, hired_at) VALUES (?,?,?,?,?,?)",
+                        (fid, name, role, duty, f"010-20{i:02d}-{3000 + i * 7:04d}", hired))  # 번호는 전부 가짜
+
+        # ── 품목 사전 + 거래처별 취급 품목 ──────────────────────
+        item_names = ["시트", "이불커버", "베개피", "수건(대)", "수건(중)", "발수건",
+                      "가운", "침대패드", "환자복", "담요", "테이블보", "냅킨"]
+        con.executemany("INSERT INTO items (name) VALUES (?)", [(n,) for n in item_names])
+        item_id = {n: i + 1 for i, n in enumerate(item_names)}
+
+        # 객실 하나(투숙 기준)가 하루에 내놓는 표준 세트 — 여기에 호텔별 차이를 얹는다
+        HOTEL_SET = {"시트": 2, "이불커버": 1, "베개피": 2, "수건(대)": 2, "수건(중)": 2,
+                     "발수건": 1, "침대패드": 0.2}
+        profiles = {
+            "그랜드한강호텔":        dict(HOTEL_SET, **{"가운": 2}),   # 관광호텔 — 가운까지 풀 세트
+            "수유 리버사이드호텔":   dict(HOTEL_SET, **{"가운": 2}),
+            "의정부 엠스테이션호텔": dict(HOTEL_SET),                  # 비즈니스 — 가운 없음
+            "창동 호텔더블유":       dict(HOTEL_SET),
+            "스테이노원":            {k: v for k, v in HOTEL_SET.items() if k != "발수건"},  # 발수건도 없음
+            "도봉 베뉴모텔":         {"시트": 2, "이불커버": 1, "베개피": 2, "수건(대)": 2, "수건(중)": 2},
+            "미아 클라우드모텔":     {"시트": 2, "이불커버": 1, "베개피": 2, "수건(대)": 2, "수건(중)": 2},
+            "포천 힐스파리조트":     dict(HOTEL_SET, **{"가운": 2}),
+        }
+        for cname, prof in profiles.items():
+            crow = con.execute("SELECT id, rooms FROM clients WHERE name=?", (cname,)).fetchone()
+            occupied = int(crow["rooms"] * 0.7)          # 가동률 70% 가정
+            for iname, per_room in prof.items():
+                con.execute("INSERT INTO client_items VALUES (?,?,?)",
+                            (crow["id"], item_id[iname], int(occupied * per_room)))
+        # 표준 세트가 안 맞는 두 곳은 손으로 (요양병원 = 환자복 중심, 웨딩홀 = 테이블 리넨 중심)
+        py_id = con.execute("SELECT id FROM clients WHERE name='강북성심요양병원'").fetchone()["id"]
+        for iname, qty in {"환자복": 210, "시트": 100, "베개피": 100, "담요": 30, "수건(중)": 150}.items():
+            con.execute("INSERT INTO client_items VALUES (?,?,?)", (py_id, item_id[iname], qty))
+        wd_id = con.execute("SELECT id FROM clients WHERE name='의정부 그랜드컨벤션'").fetchone()["id"]
+        for iname, qty in {"테이블보": 120, "냅킨": 700, "수건(중)": 60}.items():
+            con.execute("INSERT INTO client_items VALUES (?,?,?)", (wd_id, item_id[iname], qty))
 
         def sid(name):
             """이름으로 담당자 id 찾기 (예시 티켓 배정용)."""
@@ -219,31 +280,66 @@ LEFT JOIN staff s ON s.id = c.assignee_id
 
 
 @app.get("/")
-def dashboard(request: Request):
-    """공장 대시보드 — 모니터에 띄워두는 화면. 미처리(urgent 먼저, 오래된 것 먼저)가 위."""
+def dashboard(request: Request, factory: int | None = None):
+    """공장 대시보드 — 모니터에 띄워두는 화면. 미처리(urgent 먼저, 오래된 것 먼저)가 위.
+    factory 값이 있으면 그 공장 것만 보여준다 (각 공장 모니터는 자기 공장만 보면 되므로)."""
     con = db()
-    open_tickets = con.execute(TICKET_SELECT + """
-        WHERE c.status != 'done'
-        ORDER BY (c.severity = 'urgent') DESC, c.created_at ASC""").fetchall()
-    done_recent = con.execute(TICKET_SELECT + """
-        WHERE c.status = 'done' ORDER BY c.done_at DESC LIMIT 5""").fetchall()
-    # 지표: 전화·문자가 절대 못 주는 숫자들
+    fwhere = " AND cl.factory_id = ?" if factory else ""   # 공장 필터 조각
+    fargs: tuple = (factory,) if factory else ()
+    open_tickets = con.execute(TICKET_SELECT + " WHERE c.status != 'done'" + fwhere + """
+        ORDER BY (c.severity = 'urgent') DESC, c.created_at ASC""", fargs).fetchall()
+    done_recent = con.execute(TICKET_SELECT + " WHERE c.status = 'done'" + fwhere + """
+        ORDER BY c.done_at DESC LIMIT 5""", fargs).fetchall()
+    # 지표: 전화·문자가 절대 못 주는 숫자들 (공장 필터가 걸리면 그 공장 것만 센다)
+    scoped = "FROM complaints c JOIN clients cl ON cl.id = c.client_id WHERE 1=1" + fwhere
     stats = {
         "open": len(open_tickets),
         "unacked": sum(1 for t in open_tickets if t["status"] == "new"),
-        "today": con.execute("SELECT COUNT(*) FROM complaints WHERE created_at LIKE ?",
-                             (now()[:10] + "%",)).fetchone()[0],
+        "today": con.execute(f"SELECT COUNT(*) {scoped} AND c.created_at LIKE ?",
+                             fargs + (now()[:10] + "%",)).fetchone()[0],
         # 평균 처리 시간(시간 단위): 완료 티켓의 (완료시각-접수시각) 평균
-        "avg_hours": con.execute("""SELECT ROUND(AVG((julianday(done_at)-julianday(created_at))*24),1)
-                                    FROM complaints WHERE status='done'""").fetchone()[0],
+        "avg_hours": con.execute(f"""SELECT ROUND(AVG((julianday(c.done_at)-julianday(c.created_at))*24),1)
+                                     {scoped} AND c.status='done'""", fargs).fetchone()[0],
     }
-    by_type = con.execute("""SELECT type, COUNT(*) n FROM complaints
-                             GROUP BY type ORDER BY n DESC""").fetchall()
+    by_type = con.execute(f"SELECT c.type, COUNT(*) n {scoped} GROUP BY c.type ORDER BY n DESC",
+                          fargs).fetchall()
+    factories = con.execute("SELECT * FROM factories ORDER BY id").fetchall()
     con.close()
     return templates.TemplateResponse(request, "dashboard.html", {
         "open_tickets": open_tickets, "done_recent": done_recent,
         "stats": stats, "by_type": by_type,
+        "factories": factories, "cur_factory": factory,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,
+    })
+
+
+@app.get("/f/{factory_id}")
+def factory_detail(request: Request, factory_id: int):
+    """공장 상세 — 이 공장의 거래처(취급 품목·특이사항), 현재 이슈, 인력 명단을 한 화면에."""
+    con = db()
+    factory = con.execute("SELECT * FROM factories WHERE id=?", (factory_id,)).fetchone()
+    # 거래처 + 각자의 취급 품목 (많은 순으로)
+    client_rows = []
+    for c in con.execute("SELECT * FROM clients WHERE factory_id=? ORDER BY daily_kg DESC",
+                         (factory_id,)).fetchall():
+        its = con.execute("""SELECT i.name, ci.daily_qty FROM client_items ci
+            JOIN items i ON i.id = ci.item_id
+            WHERE ci.client_id=? ORDER BY ci.daily_qty DESC""", (c["id"],)).fetchall()
+        client_rows.append({"c": c, "goods": its})   # 이름이 items면 딕셔너리 내장 기능과 겹쳐 사고남
+    total_kg = sum(r["c"]["daily_kg"] for r in client_rows)
+    # 현재 이슈 = 이 공장 거래처의 미완료 티켓
+    open_tickets = con.execute(TICKET_SELECT + """
+        WHERE c.status != 'done' AND cl.factory_id = ?
+        ORDER BY (c.severity='urgent') DESC, c.created_at ASC""", (factory_id,)).fetchall()
+    # 인력 명단 (공장장 → 기사 → 인력 순)
+    staff = con.execute("""SELECT * FROM staff WHERE factory_id=?
+        ORDER BY CASE role WHEN 'manager' THEN 0 WHEN 'driver' THEN 1 ELSE 2 END, name""",
+        (factory_id,)).fetchall()
+    con.close()
+    return templates.TemplateResponse(request, "factory.html", {
+        "f": factory, "client_rows": client_rows, "total_kg": total_kg,
+        "open_tickets": open_tickets, "staff": staff,
+        "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL, "ROLE_LABEL": ROLE_LABEL,
     })
 
 

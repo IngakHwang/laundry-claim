@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ f.name }} — 세탁 티켓{% endblock %}
+{% block body %}
+<h1>{{ f.name }}</h1>
+<p class="meta">{{ f.note }} · 하루 물량 합계 약 <b>{{ "{:,}".format(total_kg) }}kg</b> · <a href="/?factory={{ f.id }}">이 공장 대시보드 →</a></p>
+
+<h2>현재 이슈 (미완료 {{ open_tickets|length }}건)</h2>
+{% for t in open_tickets %}
+<a class="card {{ 'urgent' if t.severity == 'urgent' }}" href="/c/{{ t.id }}">
+  {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
+  <span class="badge b-status-{{ t.status }}">{{ STATUS_LABEL[t.status] }}</span>
+  <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
+  <b>#{{ t.id }} {{ t.client_name }}</b> — {{ t.content }}
+  <span class="meta">담당 {{ t.assignee_name or "미배정" }} · {{ t.created_at }}</span>
+</a>
+{% else %}
+<p class="meta">미완료 이슈가 없습니다. 🎉</p>
+{% endfor %}
+
+<h2>거래처 ({{ client_rows|length }}곳)</h2>
+{% for row in client_rows %}
+<div class="card">
+  <b>{{ row.c.name }}</b> <span class="badge b-type">{{ row.c.biz_type }}</span>
+  <span class="meta">{% if row.c.rooms %}객실(침상) {{ row.c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(row.c.daily_kg) }}kg</span>
+  <div class="meta" style="margin-top:4px">
+    품목:
+    {% for it in row.goods %}{{ it.name }} {{ "{:,}".format(it.daily_qty) }}장{{ " · " if not loop.last }}{% endfor %}
+  </div>
+  {% if row.c.note %}<div class="instr">📌 상시 특이사항: {{ row.c.note }}</div>{% endif %}
+</div>
+{% endfor %}
+
+<h2>인력 ({{ staff|length }}명)</h2>
+{% for s in staff %}
+<div class="card">
+  <b>{{ s.name }}</b> <span class="badge b-type">{{ ROLE_LABEL[s.role] }}</span>
+  <span class="meta">{{ s.duty }} · {{ s.phone }} · {{ s.hired_at }} 입사</span>
+</div>
+{% endfor %}
+{% endblock %}

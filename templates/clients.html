@@ -5,7 +5,7 @@
 <p class="meta">하루 물량 추정 = 객실수 × 가동률 70% × 객실당 리넨 약 4kg (요양병원 = 침상×3kg, 웨딩홀 = 행사 기준). 업체명은 시연용 가상.</p>
 
 {% for f in factories %}
-<h2>{{ f.name }} <span class="meta">— {{ f.note }}</span></h2>
+<h2><a href="/f/{{ f.id }}">{{ f.name }} →</a> <span class="meta">— {{ f.note }}</span></h2>
 <p class="meta">하루 물량 합계 약 <b>{{ "{:,}".format(totals[f.id]) }}kg</b></p>
 {% for c in clients if c.factory_id == f.id %}
 <div class="card">

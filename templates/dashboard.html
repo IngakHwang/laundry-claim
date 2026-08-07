@@ -4,6 +4,14 @@
 {% block body %}
 <h1>공장 대시보드 <span class="meta">(15초마다 자동 갱신 — 모니터에 띄워두는 화면)</span></h1>
 
+<div class="tabs">
+  <a class="tab {{ 'active' if not cur_factory }}" href="/">전체</a>
+  {% for f in factories %}
+  <a class="tab {{ 'active' if cur_factory == f.id }}" href="/?factory={{ f.id }}">{{ f.name }}</a>
+  {% endfor %}
+  {% if cur_factory %}<a class="meta" href="/f/{{ cur_factory }}">이 공장 상세 →</a>{% endif %}
+</div>
+
 <div class="stats">
   <div class="stat"><b>{{ stats.open }}</b><span>미완료</span></div>
   <div class="stat"><b>{{ stats.unacked }}</b><span>담당자 미확인</span></div>
