@@ -447,6 +447,55 @@ def dashboard(request: Request, factory: int | None = None):
     })
 
 
+@app.get("/board")
+def board(request: Request):
+    """칸반 보드 — 상태별 열(접수→확인됨→처리중→완료)에 티켓이 카드로 붙는다.
+    지라(Jira)식 시각화: 일의 흐름이 왼쪽에서 오른쪽으로 흘러가는 게 한눈에 보인다."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    fid = scope_of(user)
+    con = db()
+    rows = con.execute(TICKET_SELECT + " WHERE 1=1" + (" AND cl.factory_id=?" if fid else "")
+                       + " ORDER BY (c.severity='urgent') DESC, c.created_at ASC",
+                       (fid,) if fid else ()).fetchall()
+    # 티켓별 사진 개수 (카드에 📷 표시용)
+    photo_n = dict(con.execute("""SELECT a.complaint_id, COUNT(*) FROM photos p
+        JOIN actions a ON a.id = p.action_id GROUP BY a.complaint_id""").fetchall())
+    con.close()
+    # 상태별로 묶고, 완료 열은 최근 8건만 (완료가 쌓이면 열이 무한히 길어지므로)
+    cols = {s: [] for s in ("new", "acked", "working", "done")}
+    today = datetime.now()
+    days_old = {}
+    for t in rows:
+        cols[t["status"]].append(t)
+        created = datetime.strptime(t["created_at"], "%Y-%m-%d %H:%M")
+        days_old[t["id"]] = (today - created).days
+    cols["done"] = sorted(cols["done"], key=lambda t: t["done_at"] or "", reverse=True)[:8]
+    return templates.TemplateResponse(request, "board.html", {
+        "cols": cols, "days_old": days_old, "photo_n": photo_n,
+        "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,
+    })
+
+
+@app.post("/c/{ticket_id}/status")
+def set_status(request: Request, ticket_id: int, status: str = Form(...)):
+    """보드에서 카드를 끌어다 놓으면 상태를 바꾼다 — 조치 일지에도 한 줄 남긴다(추적 원칙)."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    if status not in STATUS_LABEL:
+        return RedirectResponse("/board", status_code=303)
+    kind = {"acked": "ack", "working": "work", "done": "done"}.get(status, "note")
+    con = db()
+    con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
+                (ticket_id, user["name"], kind, f"칸반 보드에서 「{STATUS_LABEL[status]}」로 이동", now()))
+    con.execute("UPDATE complaints SET status=?, done_at=? WHERE id=?",
+                (status, now() if status == "done" else None, ticket_id))
+    con.commit(); con.close()
+    return RedirectResponse("/board", status_code=303)
+
+
 @app.get("/client/{client_id}")
 def client_detail(request: Request, client_id: int):
     """거래처 상세 — 이 업체의 이슈가 무엇이 있고 어떻게 처리되고 있는지 한 화면에 추적한다."""
