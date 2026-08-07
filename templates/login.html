@@ -3,6 +3,7 @@
 {% block body %}
 <h1>누구로 들어가시겠어요?</h1>
 <p class="meta">간이 로그인입니다 — 비밀번호 없이 역할을 체험합니다. 본사는 전체를, 공장 사람은 자기 공장만 봅니다.</p>
+<div class="instr">🧪 <b>데모 서비스입니다.</b> 업체·인력·클레임은 전부 가상 데이터이고, 서버가 재시작되면 예시 상태로 초기화됩니다. 마음껏 만져보세요.</div>
 {% for factory_name, items in staff|groupby('factory_name') %}
 <h2>{{ factory_name }}</h2>
 {% for s in items %}

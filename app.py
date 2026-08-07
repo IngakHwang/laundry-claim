@@ -364,6 +364,19 @@ def init_db() -> None:
 init_db()
 
 
+def ensure_demo_photos():
+    """배포 서버는 재시작 때 디스크가 초기화된다 — 데모 사진이 없으면 켜질 때 만들어 둔다.
+    (없으면 예시 클레임의 사진이 깨진 이미지로 보이므로.)"""
+    if not list(UPLOAD_DIR.glob("demo_*.png")):
+        try:
+            import make_demo_photos  # noqa: F401 — 불러오는 것 자체가 생성 실행
+        except Exception as e:                     # 사진은 장식이라, 실패해도 서비스는 켠다
+            print("데모 사진 생성 실패(치명적 아님):", e)
+
+
+ensure_demo_photos()
+
+
 def require_user(request: Request):
     """로그인한 담당자를 쿠키에서 찾는다. 없으면 None — 각 화면은 None이면 /login으로 보낸다.
     ⚠️ v1은 간이 로그인이다: 서명 없는 쿠키에 담당자 번호만 담고 비밀번호가 없다.
