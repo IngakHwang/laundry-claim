@@ -63,18 +63,4 @@
 {% endfor %}
 </details>
 
-<script>
-// 지표 클릭 = 상세로 파고들기(drill-down): 접힌 섹션이면 펴고, 그 자리로 이동해 잠깐 강조한다
-document.querySelectorAll('a.stat').forEach(function (a) {
-  a.addEventListener('click', function (e) {
-    var el = document.querySelector(a.getAttribute('href'));
-    if (!el) return;
-    e.preventDefault();
-    if (el.tagName === 'DETAILS') el.open = true;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    el.classList.add('flash');
-    setTimeout(function () { el.classList.remove('flash'); }, 1500);
-  });
-});
-</script>
 {% endblock %}

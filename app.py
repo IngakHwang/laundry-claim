@@ -503,13 +503,18 @@ def dashboard(request: Request, factory: int | None = None):
     })
 
 
-def board_data(fid: int | None):
+def board_data(fid: int | None, client_id: int | None = None):
     """칸반 보드의 재료 — 상태별 묶음·경과일·사진 개수.
-    보드 전용 화면과 대시보드 상단이 같은 재료를 쓴다 (두 벌 만들면 어긋나므로)."""
+    대시보드(공장 범위)·보드 화면·거래처 대시보드(업체 범위)가 같은 재료를 쓴다."""
     con = db()
-    rows = con.execute(TICKET_SELECT + " WHERE 1=1" + (" AND cl.factory_id=?" if fid else "")
+    where, args = " WHERE 1=1", []
+    if fid:
+        where += " AND cl.factory_id=?"; args.append(fid)
+    if client_id:
+        where += " AND c.client_id=?"; args.append(client_id)
+    rows = con.execute(TICKET_SELECT + where
                        + " ORDER BY (c.severity='urgent') DESC, c.created_at ASC",
-                       (fid,) if fid else ()).fetchall()
+                       tuple(args)).fetchall()
     # 티켓별 사진 개수 (카드에 📷 표시용)
     photo_n = dict(con.execute("""SELECT a.complaint_id, COUNT(*) FROM photos p
         JOIN actions a ON a.id = p.action_id GROUP BY a.complaint_id""").fetchall())
@@ -589,9 +594,11 @@ def client_detail(request: Request, client_id: int):
     by_type = con.execute("""SELECT type, COUNT(*) n FROM complaints
                              WHERE client_id=? GROUP BY type ORDER BY n DESC""", (client_id,)).fetchall()
     con.close()
+    cols, days_old, photo_n = board_data(None, client_id)   # 이 업체만의 현황판
     return templates.TemplateResponse(request, "client.html", {
         "c": c, "goods": goods, "open_tickets": open_tickets, "done_tickets": done_tickets,
         "stats": stats, "by_type": by_type,
+        "cols": cols, "days_old": days_old, "photo_n": photo_n,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,
     })
 

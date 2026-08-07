@@ -91,8 +91,13 @@ img.photo{display:block; max-width:220px; max-height:220px; border-radius:8px; m
 .pv-wrap img{margin:0; max-width:120px; max-height:120px;}
 .pv-del{position:absolute; top:-8px; right:-8px; width:24px; height:24px; padding:0; margin:0;
   border-radius:50%; background:#C0392B; color:#fff; font-size:.8rem; line-height:1;}
-/* 칸반 보드 — 상태별 열, 카드 끌어놓기 */
-.board{display:flex; gap:12px; align-items:flex-start; overflow-x:auto; padding-bottom:10px;}
+/* 칸반 보드 — 상태별 열, 카드 끌어놓기.
+   본문 폭(820px)에 가두지 않고 화면 폭을 다 쓴다(풀블리드) — 좌우 스크롤 없이 열 4개가 들어가게.
+   계산: 화면 폭 - 사이드바 216px - 좌우 여백. 본문보다 좁아지는 화면에선 100%로 돌아간다. */
+.board{--bw: max(100%, calc(100vw - 216px - 56px));
+  width:var(--bw); margin-left:calc((100% - var(--bw)) / 2);
+  display:flex; gap:12px; align-items:flex-start; overflow-x:auto; padding-bottom:10px;}
+@media (max-width:860px){ .board{--bw: max(100%, calc(100vw - 32px));} }
 .board .col{flex:1; min-width:212px; background:#EFF1EC; border-radius:10px; padding:9px; border-top:4px solid #C9CEC4;}
 .col.s-new{border-top-color:#C0392B;}
 .col.s-acked{border-top-color:#E5B800;}
@@ -199,6 +204,20 @@ function renderPreviews(input, dt) {
     anchor = wrap;
   });
 }
+
+// 지표 클릭 = 상세로 파고들기(drill-down): 접힌 섹션이면 펴고, 그 자리로 이동해 잠깐 강조한다.
+// 지표 타일을 쓰는 모든 화면(대시보드·거래처)에 공통 적용.
+document.querySelectorAll('a.stat').forEach(function (a) {
+  a.addEventListener('click', function (e) {
+    var el = document.querySelector(a.getAttribute('href'));
+    if (!el) return;
+    e.preventDefault();
+    if (el.tagName === 'DETAILS') el.open = true;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.classList.add('flash');
+    setTimeout(function () { el.classList.remove('flash'); }, 1500);
+  });
+});
 
 document.addEventListener('change', function (e) {
   if (!e.target.matches('input[type=file]')) return;

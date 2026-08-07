@@ -2,22 +2,24 @@
 {% block title %}{{ c.name }} — 세탁 클레임{% endblock %}
 {% block body %}
 <h1>{{ c.name }} <span class="badge b-type">{{ c.biz_type }}</span></h1>
-<p class="meta">{{ c.factory_name }} 담당 · {% if c.rooms %}객실(침상) {{ c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(c.daily_kg) }}kg</p>
+<p class="meta">{{ c.factory_name }} 담당 · {% if c.rooms %}객실(침상) {{ c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(c.daily_kg) }}kg
+  · 취급 품목: {% for it in goods %}{{ it.name }} {{ "{:,}".format(it.daily_qty) }}장{{ " · " if not loop.last }}{% endfor %}</p>
 {% if c.note %}<div class="instr">📌 상시 특이사항: {{ c.note }}</div>{% endif %}
-<p class="meta" style="margin-top:8px">
-  취급 품목: {% for it in goods %}{{ it.name }} {{ "{:,}".format(it.daily_qty) }}장{{ " · " if not loop.last }}{% endfor %}
-</p>
 
 <div class="stats">
-  <div class="stat"><b>{{ stats.total }}</b><span>누적 이슈</span></div>
-  <div class="stat"><b>{{ open_tickets|length }}</b><span>미완료</span></div>
-  <div class="stat"><b>{{ stats.avg_hours if stats.avg_hours is not none else "—" }}</b><span>평균 처리(시간)</span></div>
-  <div class="stat"><b>
+  <a class="stat" href="#board-top"><b>{{ stats.total }}</b><span>누적 클레임 ↓</span></a>
+  <a class="stat" href="#sec-open"><b>{{ open_tickets|length }}</b><span>진행 중 ↓</span></a>
+  <a class="stat" href="#sec-done"><b>{{ stats.avg_hours if stats.avg_hours is not none else "—" }}</b><span>평균 처리(시간) ↓</span></a>
+  <span class="stat"><b style="font-size:.95rem; padding-top:6px">
     {% for row in by_type %}{{ TYPE_LABEL[row.type] }} {{ row.n }}{{ " · " if not loop.last }}{% else %}—{% endfor %}
-  </b><span>유형별</span></div>
+  </b><span>유형별</span></span>
 </div>
 
-<h2>진행 중인 이슈 ({{ open_tickets|length }}건)</h2>
+<h2 id="board-top">이 업체의 클레임 현황판</h2>
+{% include "_board.html" %}
+
+<details class="fold" id="sec-open" open>
+<summary>진행 중인 클레임 ({{ open_tickets|length }}건)</summary>
 {% for t in open_tickets %}
 <a class="card {{ 'urgent' if t.severity == 'urgent' }}" href="/c/{{ t.id }}">
   {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
@@ -27,10 +29,12 @@
   <span class="meta">담당 {{ t.assignee_name or "미배정" }} · {{ t.created_at }} {{ t.channel }} 접수</span>
 </a>
 {% else %}
-<p class="meta">진행 중인 이슈가 없습니다. 🎉</p>
+<p class="meta">진행 중인 클레임이 없습니다. 🎉</p>
 {% endfor %}
+</details>
 
-<h2>완료된 이력 ({{ done_tickets|length }}건)</h2>
+<details class="fold" id="sec-done">
+<summary>완료된 이력 ({{ done_tickets|length }}건)</summary>
 {% for t in done_tickets %}
 <a class="card" href="/c/{{ t.id }}">
   <span class="badge b-status-done">완료</span>
@@ -41,4 +45,5 @@
 {% else %}
 <p class="meta">완료된 이력이 아직 없습니다.</p>
 {% endfor %}
+</details>
 {% endblock %}
