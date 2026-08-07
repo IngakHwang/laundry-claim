@@ -12,7 +12,11 @@
   <span class="meta">{{ t.created_at }} 접수</span>
 
   {% for i in instructions[t.id] %}
-  <div class="instr">📌 지시: {{ i.content }} <span class="meta">{{ i.created_at }}</span></div>
+  <div class="instr">
+    {% if i.kind == 'instruct' %}📌 지시: {{ i.content }}{% else %}📷 접수 사진{% endif %}
+    {% if i.photo %}<a href="/uploads/{{ i.photo }}" target="_blank"><img class="photo" src="/uploads/{{ i.photo }}" alt="첨부 사진"></a>{% endif %}
+    <span class="meta">{{ i.created_at }}</span>
+  </div>
   {% endfor %}
 
   {% if t.status == 'new' %}
@@ -23,10 +27,12 @@
     <button class="small" type="submit">✅ 확인했습니다</button>
   </form>
   {% else %}
-  <form method="post" action="/c/{{ t.id }}/action">
+  <form method="post" action="/c/{{ t.id }}/action" enctype="multipart/form-data">
     <input type="hidden" name="actor" value="{{ me.name }}">
     <label>처리 내용</label>
     <textarea name="content" placeholder="예: 섞인 수건 12장 회수 완료"></textarea>
+    <label>사진 (선택) — 처리 증빙</label>
+    <input type="file" name="photo" accept="image/*" capture="environment">
     <select name="kind">
       <option value="work">처리 보고 (계속 진행)</option>
       <option value="done">완료 처리</option>

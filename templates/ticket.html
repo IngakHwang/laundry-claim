@@ -18,13 +18,14 @@
   {% for a in acts %}
   <li>
     <b>{{ KIND_LABEL[a.kind] }}</b> — {{ a.content }}
+    {% if a.photo %}<a href="/uploads/{{ a.photo }}" target="_blank"><img class="photo" src="/uploads/{{ a.photo }}" alt="첨부 사진"></a>{% endif %}
     <span class="meta">{{ a.actor }} · {{ a.created_at }}</span>
   </li>
   {% endfor %}
 </ul>
 
 <h2>조치 추가</h2>
-<form class="box" method="post" action="/c/{{ t.id }}/action">
+<form class="box" method="post" action="/c/{{ t.id }}/action" enctype="multipart/form-data">
   <label>누가</label>
   <select name="actor">
     <option>사장</option>
@@ -39,6 +40,8 @@
   </select>
   <label>내용</label>
   <textarea name="content" placeholder="지시·처리 내용"></textarea>
+  <label>사진 (선택)</label>
+  <input type="file" name="photo" accept="image/*" capture="environment">
   <button type="submit">기록하기</button>
 </form>
 {% endblock %}

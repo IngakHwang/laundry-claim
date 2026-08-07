@@ -2,7 +2,7 @@
 {% block title %}컴플레인 접수 — 세탁 티켓{% endblock %}
 {% block body %}
 <h1>컴플레인 접수</h1>
-<form class="box" method="post" action="/new">
+<form class="box" method="post" action="/new" enctype="multipart/form-data">
   <label>거래처</label>
   <select name="client_id" required>
     {% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
@@ -31,6 +31,9 @@
   <select name="assignee_id" required>
     {% for s in staff %}<option value="{{ s.id }}">[{{ ROLE_LABEL[s.role] }}] {{ s.name }}</option>{% endfor %}
   </select>
+
+  <label>사진 (선택) — 폰에서는 바로 촬영됩니다</label>
+  <input type="file" name="photo" accept="image/*" capture="environment">
 
   <label>담당자에게 지시 (선택)</label>
   <textarea name="instruction" placeholder="예: 오늘 수거 때 회수해 올 것"></textarea>
