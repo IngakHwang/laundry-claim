@@ -207,22 +207,25 @@ def init_db() -> None:
                         (fid, name, role, duty, f"010-20{i:02d}-{3000 + i * 7:04d}", hired))  # 번호는 전부 가짜
 
         # ── 품목 사전 + 거래처별 취급 품목 ──────────────────────
-        item_names = ["시트", "이불커버", "베개피", "수건(대)", "수건(중)", "발수건",
+        # 품목 이름은 현장 용어대로 (대타올·중타올·발매트 — 2026-08-07 인각님 용어)
+        item_names = ["시트", "이불커버", "베개피", "대타올", "중타올", "발매트",
                       "가운", "침대패드", "환자복", "담요", "테이블보", "냅킨"]
         con.executemany("INSERT INTO items (name) VALUES (?)", [(n,) for n in item_names])
         item_id = {n: i + 1 for i, n in enumerate(item_names)}
 
-        # 객실 하나(투숙 기준)가 하루에 내놓는 표준 세트 — 여기에 호텔별 차이를 얹는다
-        HOTEL_SET = {"시트": 2, "이불커버": 1, "베개피": 2, "수건(대)": 2, "수건(중)": 2,
-                     "발수건": 1, "침대패드": 0.2}
+        # 객실 하나(투숙 기준)가 하루에 내놓는 표준 세트 — 인각님 현장 실측 기준
+        # (시트 1 · 커버 1 · 베개피 2~4 · 대타올 1~2 · 중타올 3~4 · 발매트 1. 2026-08-07 정정 —
+        #  Claude 초기 추정 "시트 2장"이 틀렸던 것)
+        HOTEL_SET = {"시트": 1, "이불커버": 1, "베개피": 3, "대타올": 2, "중타올": 3,
+                     "발매트": 1, "침대패드": 0.2}
         profiles = {
             "그랜드한강호텔":        dict(HOTEL_SET, **{"가운": 2}),   # 관광호텔 — 가운까지 풀 세트
             "수유 리버사이드호텔":   dict(HOTEL_SET, **{"가운": 2}),
             "의정부 엠스테이션호텔": dict(HOTEL_SET),                  # 비즈니스 — 가운 없음
             "창동 호텔더블유":       dict(HOTEL_SET),
-            "스테이노원":            {k: v for k, v in HOTEL_SET.items() if k != "발수건"},  # 발수건도 없음
-            "도봉 베뉴모텔":         {"시트": 2, "이불커버": 1, "베개피": 2, "수건(대)": 2, "수건(중)": 2},
-            "미아 클라우드모텔":     {"시트": 2, "이불커버": 1, "베개피": 2, "수건(대)": 2, "수건(중)": 2},
+            "스테이노원":            {k: v for k, v in HOTEL_SET.items() if k != "발매트"},  # 발매트도 없음
+            "도봉 베뉴모텔":         {"시트": 1, "이불커버": 1, "베개피": 2, "대타올": 1, "중타올": 3},
+            "미아 클라우드모텔":     {"시트": 1, "이불커버": 1, "베개피": 2, "대타올": 1, "중타올": 3},
             "포천 힐스파리조트":     dict(HOTEL_SET, **{"가운": 2}),
         }
         for cname, prof in profiles.items():
@@ -233,10 +236,10 @@ def init_db() -> None:
                             (crow["id"], item_id[iname], int(occupied * per_room)))
         # 표준 세트가 안 맞는 두 곳은 손으로 (요양병원 = 환자복 중심, 웨딩홀 = 테이블 리넨 중심)
         py_id = con.execute("SELECT id FROM clients WHERE name='강북성심요양병원'").fetchone()["id"]
-        for iname, qty in {"환자복": 210, "시트": 100, "베개피": 100, "담요": 30, "수건(중)": 150}.items():
+        for iname, qty in {"환자복": 210, "시트": 100, "베개피": 100, "담요": 30, "중타올": 150}.items():
             con.execute("INSERT INTO client_items VALUES (?,?,?)", (py_id, item_id[iname], qty))
         wd_id = con.execute("SELECT id FROM clients WHERE name='의정부 그랜드컨벤션'").fetchone()["id"]
-        for iname, qty in {"테이블보": 120, "냅킨": 700, "수건(중)": 60}.items():
+        for iname, qty in {"테이블보": 120, "냅킨": 700, "중타올": 60}.items():
             con.execute("INSERT INTO client_items VALUES (?,?,?)", (wd_id, item_id[iname], qty))
 
         def sid(name):
