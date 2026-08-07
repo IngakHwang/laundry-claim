@@ -3,6 +3,8 @@
   {% for status, tickets in cols.items() %}
   <div class="col s-{{ status }}" data-status="{{ status }}" id="col-{{ status }}">
     <h3>{{ STATUS_LABEL[status] }} <span class="cnt">{{ tickets|length }}</span></h3>
+    <p class="colsub">{{ {"new": "담당자가 아직 확인 안 함", "acked": "담당자가 봤음 — 착수 전",
+                         "working": "처리 진행 중", "done": "끝남 (최근 8건)"}[status] }}</p>
     {% for t in tickets %}
     <a class="kcard {{ 'urgent' if t.severity == 'urgent' }}" draggable="true" data-id="{{ t.id }}" href="/c/{{ t.id }}">
       <div class="title">
@@ -12,7 +14,8 @@
       <div class="body">{{ t.content }}</div>
       <div class="meta">
         <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
-        {{ t.assignee_name or "미배정" }}
+        🏭 {{ t.factory_name.split(' ')[0] if t.factory_name else "?" }}
+        · 👤 <b>{{ t.assignee_name or "미배정" }}</b>
         {% if photo_n.get(t.id) %} · 📷{{ photo_n[t.id] }}{% endif %}
         {% if status != 'done' %} · {{ days_old[t.id] }}일째{% endif %}
       </div>
