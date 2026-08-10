@@ -40,7 +40,9 @@
       {# 「완료」를 드롭다운에 숨기지 않는다 — 기본값(처리 보고)에 묻혀 티켓이 영원히
          처리중에 머물던 문제(점검 지적). 누른 버튼이 자기 kind 값을 제출한다. #}
       <button type="submit" name="kind" value="work">처리 보고 기록 (계속 진행)</button>
-      <button class="alt-done" type="submit" name="kind" value="done">{{ ic.i('check', 15) }} 완료 처리</button>
+      {# 완료만은 한 번 묻는다 — 현황판과 같은 원칙. 오탭 완료가 append-only 일지에 영구히 남는 사고 방지(재검증 지적) #}
+      <button class="alt-done" type="submit" name="kind" value="done"
+              onclick="return confirm('이 클레임을 완료 처리할까요?')">{{ ic.i('check', 15) }} 완료 처리</button>
     </form>
     {% endif %}
   {% endif %}

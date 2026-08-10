@@ -38,10 +38,14 @@
   --st-acked:#DFA700;   --st-acked-bg:#FDF2CE;   --st-acked-tx:#8A6100;
   --st-working:#2563EB; --st-working-bg:#E8F0FE; --st-working-tx:#1D4FBE;
   --st-done:#16803C;    --st-done-bg:#E6F4EA;    --st-done-tx:#157035;
+  --brand-deep:#4F41C8;        /* 브랜드 진한 단계 — 옅은 배경 위 글자용(보라 원색은 대비 4.4:1로 경계 미달) */
   /* 면의 입체감 — 테두리 하나였던 카드에 은은한 그림자(재질 교체 5단계) */
   --shadow:0 1px 2px rgba(16,24,40,.06);
   --shadow-hover:0 4px 12px rgba(16,24,40,.10);
 }
+/* 전역 링크색 — 규칙이 없으면 브라우저 기본 파랑·방문 보라가 화면마다 섞인다(재검증 지적).
+   .meta·.card 등 자기 색을 가진 컴포넌트는 클래스 규칙이 이겨서 그대로다. */
+a{color:var(--brand-deep);}
 *{box-sizing:border-box}
 body{font-family:"Pretendard Variable",Pretendard,"Segoe UI","Malgun Gothic",sans-serif; margin:0; background:var(--bg); color:var(--text);}
 /* flow식 골격 (인각님 제공 캡처 기준): 흰 사이드바(주 버튼 + 접히는 섹션) + 상단 바(검색·아바타).
@@ -56,7 +60,7 @@ aside.side{width:216px; flex:none; background:var(--surface); border-right:1px s
 .side a{display:block; color:var(--text); text-decoration:none; padding:8px 10px; border-radius:8px;
   margin-bottom:2px; font-size:.92rem;}
 .side a:hover{background:#F1F2F6;}
-.side a.on{background:var(--brand-soft); color:var(--brand); font-weight:700;}
+.side a.on{background:var(--brand-soft); color:var(--brand-deep); font-weight:700;}   /* 옅은 보라 배경 위라 진한 단계로 (AA 대비) */
 .side details{margin-top:12px;}
 .side summary{cursor:pointer; list-style:none; color:var(--faint); font-size:.78rem; font-weight:700;
   padding:4px 10px; letter-spacing:.04em;}
