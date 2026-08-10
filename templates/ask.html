@@ -12,6 +12,58 @@
 /* 대화 스레드 — 말풍선 행(각 질문/답)이 세로로 쌓이는 목록 */
 #chat{display:flex; flex-direction:column; gap:14px; margin-top:10px;}
 
+/* ── 2단 레이아웃(사이드바 + 대화) ──────────────────────────────────────
+   참고: 프로젝트 루트 "LLM 디자인 예시.PNG" — Gemini/ChatGPT류가 왼쪽에 「새 채팅」과
+   최근 대화 제목을 세로로 늘어놓고, 지금 보는 대화만 옅은 배경 알약으로 표시하는 구조.
+   이 화면(세탁 상담)에 같은 구조를 붙여서, 예전 대화방을 오가기 쉽게 한다. */
+
+/* base.html의 <main>은 폭이 좁게(글 읽기용) 잡혀 있는데, 이 화면만은 사이드바+대화를
+   나란히 놓아야 해서 더 넓혀야 한다. base.html은 손대지 않기로 했으므로, 이 화면 전용
+   스타일에서만 main 선택자를 다시 정의해 폭을 넓힌다(다른 화면에는 영향 없음). */
+main{max-width:1160px;}
+
+/* 사이드바(.asknav)와 대화 영역(.askmain)을 가로로 나란히 놓는 바깥 틀 */
+.askwrap{display:flex; gap:24px; align-items:flex-start;}
+
+/* 왼쪽 사이드바 — 폭 고정(232px), 페이지를 스크롤해도 화면 위쪽에 붙어 있도록(sticky)
+   해서 대화가 길어져도 방 목록은 늘 보인다. 대화 개수가 많아지면 사이드바 자체 안에서만
+   스크롤(overflow-y:auto)하게 해서 페이지 전체 스크롤과 분리한다. */
+.asknav{width:232px; flex:none; position:sticky; top:16px; display:flex;
+  flex-direction:column; gap:2px; max-height:calc(100vh - 32px); overflow-y:auto;}
+
+/* 「+ 새 상담」 버튼 — 알약(pill) 모양, 브랜드 옅은 배경 위에 브랜드 진한 글자.
+   목록 맨 위에서 늘 눈에 띄게 하고, 클릭하면 방 번호 없이 /ask/chat으로 이동해 새 방을 연다. */
+.asknav .newchat{display:block; background:var(--brand-soft); color:var(--brand-deep); font-weight:700;
+  border-radius:999px; padding:11px 18px; text-decoration:none; margin-bottom:10px; text-align:left;}
+.asknav .newchat:hover{box-shadow:var(--shadow);}
+
+/* 「최근」같은 구역 라벨 — 작고 옅은 글자로 목록 위에 구분선처럼 붙인다 */
+.asknav .navlabel{font-size:.75rem; color:var(--faint); font-weight:700; letter-spacing:.04em; padding:8px 14px 4px;}
+
+/* 대화 목록의 낱개 항목 — 제목이 길면 줄바꿈하지 않고 말줄임표(...)로 자른다(챗 목록의 관례) */
+.asknav .chatitem{display:block; padding:9px 14px; border-radius:999px; color:var(--text); text-decoration:none;
+  font-size:.9rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.asknav .chatitem:hover{background:#F1F2F6;}
+/* 지금 보고 있는 방 — 클래스명을 base.html의 현재 메뉴 표시(.on)와 겹치지 않게 now로 따로 둔다 */
+.asknav .chatitem.now{background:var(--brand-soft); color:var(--brand-deep); font-weight:700;}
+
+/* 오른쪽 대화 영역 — 사이드바가 차지한 나머지 폭을 쓰되(flex:1), 말풍선이 너무 넓게
+   퍼지지 않도록 최대 폭은 예전과 같은 800px로 유지한다(min-width:0은 flex 자식이
+   내용 때문에 줄어들지 않고 밀려나는 것을 막는 표준 처방) */
+.askmain{flex:1; min-width:0; max-width:800px;}
+
+/* 폰 화면(860px 이하) — 사이드바를 놓을 공간이 없고, 방을 고르는 역할은 이미 /ask 목록
+   화면이 맡고 있으므로 사이드바를 통째로 숨긴다. 대신 대화 화면 안의 「← 상담 목록」
+   링크(.backlink)로 그 목록 화면으로 돌아갈 수 있게 해둔다. */
+@media (max-width:860px){
+  .asknav{display:none;}
+}
+/* 데스크톱(861px 이상) — 사이드바로 방을 바로 오갈 수 있으니, 폰 전용이던
+   「← 상담 목록」 링크는 중복이라 숨긴다. */
+@media (min-width:861px){
+  .backlink{display:none;}
+}
+
 /* 말풍선 한 행 — 상담원은 왼쪽 정렬, 사용자는 오른쪽 정렬(챗 UI의 기본 관례) */
 #chat .msg{display:flex; gap:8px;}
 #chat .msg.bot{justify-content:flex-start;}
@@ -78,57 +130,78 @@
    서버(/api/ask)는 질문마다 독립으로 처리한다(모델 자신은 이전 질문을 기억하지 않는다) —
    다만 이 방(chat_id)의 질문·답은 DB(chats/chat_msgs)에 순서대로 쌓이므로, 새로고침하거나
    나중에 이 방을 다시 열어도 대화가 그대로 남아 있다(대화방 여러 개 + 대화내역 저장). #}
-<h1>세탁 상담</h1>
-{# 이 방에서 목록으로 되돌아가는 길 — 방이 여러 개로 늘어나면서(카톡식) 필요해졌다 #}
-<a class="meta" href="/ask">← 상담 목록</a>
 
-<div id="chat">
-  {# 이 방에 저장된 대화가 있으면 서버에서 전부 그대로 그린다(새로고침해도 안 사라지는 이유).
-     항상 user→bot 쌍으로 저장되므로(POST /api/ask가 두 줄을 순서대로 넣는다) bot 메시지가
-     최소 하나는 있어 .ava가 반드시 하나는 생긴다 — 그래도 JS 쪽은 방어적으로 null을 확인한다. #}
-  {% if msgs %}
-    {% for m in msgs %}
-      {% if m.role == 'user' %}
-      <div class="msg user">
-        <div class="bubble">{{ m.content }}</div>
-      </div>
+{# 화면을 사이드바(.asknav) + 대화 영역(.askmain) 두 칸으로 나누는 바깥 틀.
+   구조는 "LLM 디자인 예시.PNG"(Gemini류 챗 UI) 참고 — 왼쪽에 새 채팅 버튼과 최근 대화
+   제목 목록, 오른쪽에 실제 대화. 폰에서는 CSS(.asknav{display:none})가 사이드바를 지운다 —
+   화면이 좁아서 둘 겨를이 없고, 방을 고르는 역할은 이미 /ask 목록 화면이 하고 있어서다. #}
+<div class="askwrap">
+  <nav class="asknav">
+    {# 방 번호 없이 이 라우트로 다시 오면(id 기본값 0) 새 상담 화면이 된다 #}
+    <a class="newchat" href="/ask/chat">+ 새 상담</a>
+    {% if chats %}
+    <div class="navlabel">최근</div>
+    {% for c in chats %}
+    {# now 클래스 = 지금 보고 있는 방(base.html의 메뉴 현재위치 표시 .on과 이름이 겹치지 않게 따로 뒀다) #}
+    <a class="chatitem {{ 'now' if c.id == chat_id }}" href="/ask/chat?id={{ c.id }}" title="{{ c.title }}">{{ c.title }}</a>
+    {% endfor %}
+    {% endif %}
+  </nav>
+
+  <div class="askmain">
+    <h1>세탁 상담</h1>
+    {# 이 방에서 목록으로 되돌아가는 길 — 폰 화면 전용(데스크톱은 사이드바로 대신한다, backlink 클래스 참고) #}
+    <a class="meta backlink" href="/ask">← 상담 목록</a>
+
+    <div id="chat">
+      {# 이 방에 저장된 대화가 있으면 서버에서 전부 그대로 그린다(새로고침해도 안 사라지는 이유).
+         항상 user→bot 쌍으로 저장되므로(POST /api/ask가 두 줄을 순서대로 넣는다) bot 메시지가
+         최소 하나는 있어 .ava가 반드시 하나는 생긴다 — 그래도 JS 쪽은 방어적으로 null을 확인한다. #}
+      {% if msgs %}
+        {% for m in msgs %}
+          {% if m.role == 'user' %}
+          <div class="msg user">
+            <div class="bubble">{{ m.content }}</div>
+          </div>
+          {% else %}
+          <div class="msg bot">
+            <div class="ava">{{ ic.i('wash', 16) }}</div>
+            <div class="msgcol">
+              {# ok=0(오류·연결 실패 안내였음)이면 기존 JS와 같은 방식으로 글자색을 옅게 낮춘다 #}
+              <div class="bubble"{% if not m.ok %} style="color:var(--sub)"{% endif %}>{{ m.content }}</div>
+              {% if m.sources %}
+              <div class="sources">
+                {% for s in m.sources %}
+                <span class="chip">근거 {{ s.n }} · {{ s.title }}{% if s.badge %} ✓{% endif %}</span>
+                {% endfor %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        {% endfor %}
       {% else %}
+      {# 저장된 대화가 없을 때(새 방)만 상담원의 첫 인사를 보여준다 — 질문을 하지 않아도 뜨는 말풍선 #}
       <div class="msg bot">
         <div class="ava">{{ ic.i('wash', 16) }}</div>
         <div class="msgcol">
-          {# ok=0(오류·연결 실패 안내였음)이면 기존 JS와 같은 방식으로 글자색을 옅게 낮춘다 #}
-          <div class="bubble"{% if not m.ok %} style="color:var(--sub)"{% endif %}>{{ m.content }}</div>
-          {% if m.sources %}
-          <div class="sources">
-            {% for s in m.sources %}
-            <span class="chip">근거 {{ s.n }} · {{ s.title }}{% if s.badge %} ✓{% endif %}</span>
-            {% endfor %}
-          </div>
-          {% endif %}
+          <div class="bubble">안녕하세요, 세탁 상담원입니다. 세탁 공정과 얼룩 처리에 대해 물어보세요. 아는 것만 답하고, 모르는 것은 모른다고 말씀드립니다.</div>
         </div>
       </div>
       {% endif %}
-    {% endfor %}
-  {% else %}
-  {# 저장된 대화가 없을 때(새 방)만 상담원의 첫 인사를 보여준다 — 질문을 하지 않아도 뜨는 말풍선 #}
-  <div class="msg bot">
-    <div class="ava">{{ ic.i('wash', 16) }}</div>
-    <div class="msgcol">
-      <div class="bubble">안녕하세요, 세탁 상담원입니다. 세탁 공정과 얼룩 처리에 대해 물어보세요. 아는 것만 답하고, 모르는 것은 모른다고 말씀드립니다.</div>
     </div>
-  </div>
-  {% endif %}
-</div>
 
-<div class="inputbar">
-  <div class="pill">
-    {# maxlength 500 — 서버 쪽 질문 길이 제약과 맞춘 화면 쪽 1차 방어선 #}
-    <textarea id="q" rows="1" maxlength="500" placeholder="커피 얼룩은 어떻게 빼나요?"></textarea>
-    <button type="button" id="send" class="sendbtn" aria-label="보내기">
-      {# 위쪽 화살표 — "보낸다"는 방향을 그대로 그린 아이콘. 상담원 아바타와 달리 이 화면 전용이라
-         _icons.html에 넣지 않고 여기서만 직접 그린다 #}
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
-    </button>
+    <div class="inputbar">
+      <div class="pill">
+        {# maxlength 500 — 서버 쪽 질문 길이 제약과 맞춘 화면 쪽 1차 방어선 #}
+        <textarea id="q" rows="1" maxlength="500" placeholder="커피 얼룩은 어떻게 빼나요?"></textarea>
+        <button type="button" id="send" class="sendbtn" aria-label="보내기">
+          {# 위쪽 화살표 — "보낸다"는 방향을 그대로 그린 아이콘. 상담원 아바타와 달리 이 화면 전용이라
+             _icons.html에 넣지 않고 여기서만 직접 그린다 #}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 

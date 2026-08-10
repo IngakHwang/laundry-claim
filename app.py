@@ -1140,20 +1140,28 @@ def ask_chat(request: Request, id: int = 0):
     if not BRAIN_URL:                        # 메뉴가 숨겨져 있어도 주소로 직접 오면 안내
         return HTMLResponse("세탁 상담은 준비 중입니다. <p><a href='/'>← 대시보드로</a></p>")
     msgs: list[dict] = []
+    con = db()
     if id:
-        con = db()
         chat = con.execute("SELECT * FROM chats WHERE id=?", (id,)).fetchone()
         if chat is None or chat["staff_id"] != user["id"]:   # 없는 방이거나 남의 방 — 목록으로 돌려보낸다
             con.close()
             return RedirectResponse("/ask", status_code=303)
         rows = con.execute("SELECT * FROM chat_msgs WHERE chat_id=? ORDER BY id", (id,)).fetchall()
-        con.close()
         # sources 칸은 DB에 JSON 문자열로 눌러 담겨 있으므로 화면에 넘기기 전에 풀어준다.
         # (빈 문자열 = 근거 없음 → 빈 목록. bot 메시지가 아니면 애초에 이 칸이 비어 있다)
         for r in rows:
             msgs.append({"role": r["role"], "content": r["content"], "ok": r["ok"],
                         "sources": json.loads(r["sources"]) if r["sources"] else []})
-    return templates.TemplateResponse(request, "ask.html", {"chat_id": id, "msgs": msgs})
+    # 데스크톱 화면에 붙는 대화 목록 사이드바용 — ask_page(/ask 목록 화면)가 쓰는 것과 같은 쿼리로
+    # 내 방 전체(제목·메시지 개수)를 가져온다. id가 0(새 상담)이든 있든 항상 실행한다 — 새 상담
+    # 화면에서도 사이드바에는 기존 대화들이 보여야 바로 옮겨갈 수 있다. 폰 화면은 좁아서 사이드바를
+    # CSS로 숨기고(.asknav{display:none}) 그 대신 이미 있는 /ask 목록 화면이 방 고르는 역할을 맡는다.
+    chats = con.execute("""SELECT c.id, c.title, c.created_at, COUNT(m.id) AS n
+        FROM chats c LEFT JOIN chat_msgs m ON m.chat_id=c.id
+        WHERE c.staff_id=? GROUP BY c.id, c.title, c.created_at
+        ORDER BY c.id DESC""", (user["id"],)).fetchall()
+    con.close()
+    return templates.TemplateResponse(request, "ask.html", {"chat_id": id, "msgs": msgs, "chats": chats})
 
 
 @app.post("/api/ask")
