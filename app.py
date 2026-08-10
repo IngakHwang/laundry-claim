@@ -804,10 +804,21 @@ def me_home(request: Request):
     if user["role"] != "owner":
         return RedirectResponse(f"/me/{user['id']}", status_code=303)
     con = db()
-    staff = con.execute("SELECT * FROM staff WHERE role != 'owner' ORDER BY factory_id, role, name").fetchall()
+    # 공장 이름을 붙여 공장별로 묶어 보여준다 (로그인 화면과 같은 배열 — 찾기 쉽게)
+    staff = con.execute("""SELECT s.*, COALESCE(f.name, '본사') AS factory_name FROM staff s
+        LEFT JOIN factories f ON f.id = s.factory_id
+        WHERE s.role != 'owner'
+        ORDER BY s.factory_id, CASE s.role WHEN 'manager' THEN 0 WHEN 'driver' THEN 1 ELSE 2 END, s.name""").fetchall()
+    # 담당자별 현재 부담 — "누가 몇 건을 들고 있나"를 목록에서 바로 보이게 (2026-08-10 인각님 요청)
+    open_n = dict(con.execute("""SELECT assignee_id, COUNT(*) FROM complaints
+        WHERE status != 'done' AND assignee_id IS NOT NULL GROUP BY assignee_id""").fetchall())
+    urgent_n = dict(con.execute("""SELECT assignee_id, COUNT(*) FROM complaints
+        WHERE status != 'done' AND severity = 'urgent' AND assignee_id IS NOT NULL
+        GROUP BY assignee_id""").fetchall())
     con.close()
     return templates.TemplateResponse(request, "me_select.html",
-                                      {"staff": staff, "ROLE_LABEL": ROLE_LABEL})
+                                      {"staff": staff, "ROLE_LABEL": ROLE_LABEL,
+                                       "open_n": open_n, "urgent_n": urgent_n})
 
 
 @app.get("/me/{staff_id}")

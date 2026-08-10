@@ -2,10 +2,22 @@
 {% block title %}담당자별 클레임 — 세탁 클레임{% endblock %}
 {% block body %}
 {# 사장 전용 화면 — 사장은 배정 대상이 아니라서 담당자를 골라 그 사람의 클레임을 본다.
-   예전 제목 "누구세요?"는 로그인 화면으로 오해됐다(점검 지적) — 기능 이름을 그대로 부른다. #}
+   예전 제목 "누구세요?"는 로그인 화면으로 오해됐다(점검 지적) — 기능 이름을 그대로 부른다.
+   이름마다 미완료 건수를 배지로 단다 — "누가 몇 건을 들고 있나"가 목록에서 바로 보이게 (인각님 요청) #}
 <h1>담당자별 클레임</h1>
 <p class="meta">사장님은 담당자로 배정받지 않습니다 — 담당자를 고르면 그 사람에게 배정된 클레임이 보입니다.</p>
-{% for s in staff %}
-<a class="card" href="/me/{{ s.id }}"><b>{{ s.name }}</b> <span class="badge b-type">{{ ROLE_LABEL[s.role] }}</span></a>
+{% for factory_name, items in staff|groupby('factory_name') %}
+<h2>{{ factory_name }}</h2>
+{% for s in items %}
+<a class="card" href="/me/{{ s.id }}"><b>{{ s.name }}</b> <span class="badge b-type">{{ ROLE_LABEL[s.role] }}</span>
+  {% set n = open_n.get(s.id, 0) %}
+  {% if n %}
+  <span class="badge b-status-working">미완료 {{ n }}건</span>
+  {% if urgent_n.get(s.id) %}<span class="badge b-urgent">긴급 {{ urgent_n[s.id] }}</span>{% endif %}
+  {% else %}
+  <span class="meta">미완료 없음</span>
+  {% endif %}
+</a>
+{% endfor %}
 {% endfor %}
 {% endblock %}
