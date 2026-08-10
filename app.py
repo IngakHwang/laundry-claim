@@ -722,8 +722,9 @@ def dashboard(request: Request, factory: int | None = None):
     by_type = con.execute(f"SELECT c.type, COUNT(*) n {scoped} GROUP BY c.type ORDER BY n DESC",
                           fargs).fetchall()
     factories = con.execute("SELECT * FROM factories ORDER BY id").fetchall()
-    # 카톡 알림 연동 여부 — 사장 화면에 연동 상태·입구를 보여주기 위해
+    # 카톡 알림 연동 여부 + 연동된 계정 표시 — 사장 화면에 상태·입구를 보여주기 위해
     kakao_on = bool(KAKAO_REST_KEY) and setting_get(con, "kakao_refresh_token") is not None
+    kakao_who = setting_get(con, "kakao_account") or "연동됨"
     con.close()
     cols, days_old, photo_n = board_data(factory)   # 대시보드 상단의 칸반 (같은 공장 필터로)
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -732,7 +733,7 @@ def dashboard(request: Request, factory: int | None = None):
         "stats": stats, "by_type": by_type,
         "factories": factories, "cur_factory": factory,
         "allow_all": scope_of(user) is None,   # 본사만 공장 탭을 본다
-        "kakao_on": kakao_on,
+        "kakao_on": kakao_on, "kakao_who": kakao_who,
         "kakao_ready": bool(KAKAO_REST_KEY),   # 키 등록 전엔 연동 입구를 아예 숨긴다 (데모 방문자에게 설정 안내가 새지 않게)
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,
     })
@@ -1083,10 +1084,11 @@ def kakao_setup(request: Request):
     if not KAKAO_REST_KEY:
         return HTMLResponse("KAKAO_REST_KEY 환경변수가 없습니다 — 카카오 디벨로퍼스 앱의 "
                             "REST API 키를 서버 환경변수로 등록한 뒤 다시 시도하세요.")
+    # prompt=login: 브라우저에 남은 카카오 세션을 무시하고 로그인부터 다시 — 다른 계정으로 갈아탈 수 있게
     return RedirectResponse(
         "https://kauth.kakao.com/oauth/authorize?response_type=code"
         f"&client_id={KAKAO_REST_KEY}&redirect_uri={_kakao_redirect_uri(request)}"
-        "&scope=talk_message")
+        "&scope=talk_message&prompt=login")
 
 
 @app.get("/kakao/callback")
@@ -1107,6 +1109,54 @@ def kakao_callback(request: Request, code: str = "", error: str = ""):
     setting_set(con, "kakao_refresh_token", tok["refresh_token"])
     setting_set(con, "kakao_access_token", tok["access_token"])
     setting_set(con, "kakao_access_expires", str(time.time() + tok.get("expires_in", 21600)))
+    # 어느 계정에 연동됐는지 저장 — 화면에 표시하기 위해 (기본 동의만으로는 회원번호뿐이라 끝 4자리로)
+    try:
+        req2 = urllib.request.Request("https://kapi.kakao.com/v2/user/me")
+        req2.add_header("Authorization", f"Bearer {tok['access_token']}")
+        me = json.loads(urllib.request.urlopen(req2, timeout=10).read().decode("utf-8"))
+        nick = (me.get("properties") or {}).get("nickname") or \
+               ((me.get("kakao_account") or {}).get("profile") or {}).get("nickname")
+        setting_set(con, "kakao_account", (nick + " " if nick else "계정 ") + "…" + str(me.get("id"))[-4:])
+    except Exception:
+        pass                                     # 식별 실패해도 연동 자체는 유효
     con.commit(); con.close()
-    kakao_send_to_me("[세탁 클레임] 카톡 알림 연동 완료 — 새 클레임이 접수되면 이 채팅으로 알림이 옵니다.")
+    kakao_send_to_me("[세탁 클레임] 카톡 알림 연동 완료 — 새 클레임이 접수되면 이 「나와의 채팅」으로 알림이 옵니다.")
+    return RedirectResponse("/", status_code=303)
+
+
+@app.get("/kakao/test")
+def kakao_test(request: Request):
+    """테스트 발송(사장 전용) — 어느 계정으로 가는지, 발송이 살아 있는지를 바로 확인하는 버튼."""
+    user = require_user(request)
+    if user is None or user["role"] != "owner":
+        return RedirectResponse("/", status_code=303)
+    try:
+        sent = kakao_send_to_me("[세탁 클레임] 테스트 발송 — 이 메시지가 보이는 카카오 계정이 알림 수신 계정입니다.")
+    except Exception as e:
+        return HTMLResponse(f"테스트 발송 실패: {e} <p><a href='/'>← 대시보드로</a></p>")
+    if not sent:
+        return HTMLResponse("아직 연동되지 않았습니다. <p><a href='/kakao/setup'>연동하러 가기</a></p>")
+    return HTMLResponse("테스트 메시지를 보냈습니다 — 카카오톡의 <b>「나와의 채팅」</b>방을 확인하세요. "
+                        "(내가 나에게 보낸 메시지는 푸시 알림이 울리지 않습니다)"
+                        "<p><a href='/'>← 대시보드로</a></p>")
+
+
+@app.get("/kakao/disconnect")
+def kakao_disconnect(request: Request):
+    """연동 해제(사장 전용) — 카카오 쪽 앱 연결도 끊고, 서버에 보관한 토큰을 지운다.
+    해제 후 「연동하기」를 다시 누르면 로그인부터 시작하므로 다른 계정으로 갈아탈 수 있다."""
+    user = require_user(request)
+    if user is None or user["role"] != "owner":
+        return RedirectResponse("/", status_code=303)
+    try:
+        token = kakao_access_token()
+        if token:                                # 카카오 계정 쪽의 앱 연결 자체를 해제
+            req2 = urllib.request.Request("https://kapi.kakao.com/v1/user/unlink", data=b"")
+            req2.add_header("Authorization", f"Bearer {token}")
+            urllib.request.urlopen(req2, timeout=10)
+    except Exception as e:
+        print("카카오 unlink 실패(토큰 삭제는 계속):", e)
+    con = db()
+    con.execute("DELETE FROM settings WHERE key LIKE 'kakao_%'")
+    con.commit(); con.close()
     return RedirectResponse("/", status_code=303)

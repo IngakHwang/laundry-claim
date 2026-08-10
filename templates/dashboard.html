@@ -11,9 +11,17 @@
   {% endfor %}
   {% if cur_factory %}<a class="meta" href="/f/{{ cur_factory }}">이 공장 상세 →</a>{% endif %}
   {# 카톡 알림(나에게 보내기) 상태 — 사장만, 그리고 서버에 REST 키가 있을 때만.
-     키 등록 전에 노출하면 데모 방문자가 설정 안내 문구를 만나게 된다 #}
+     키 등록 전에 노출하면 데모 방문자가 설정 안내 문구를 만나게 된다.
+     연동됐으면 어느 계정인지 + 테스트·해제 입구까지 (해제 후 재연동 = 다른 계정으로 갈아타기) #}
   {% if kakao_ready %}
-  <a class="meta" href="/kakao/setup" style="margin-left:auto">카톡 알림 {{ '✓ 연동됨 (재연동)' if kakao_on else '연동하기 →' }}</a>
+  <span class="meta" style="margin-left:auto">
+    {% if kakao_on %}
+    카톡 알림 ✓ {{ kakao_who }} · <a href="/kakao/test">테스트</a>
+    · <a href="/kakao/disconnect" onclick="return confirm('카톡 알림 연동을 해제할까요? 다른 계정으로 다시 연동할 수 있습니다.')">해제</a>
+    {% else %}
+    <a href="/kakao/setup">카톡 알림 연동하기 →</a>
+    {% endif %}
+  </span>
   {% endif %}
 </div>
 {% elif cur_factory %}
