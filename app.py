@@ -202,6 +202,7 @@ def attach_photos(con, action_id: int, photos: list[UploadFile] | None) -> None:
 # 모든 알림은 연동한 관리자(사장) 본인의 카톡으로 간다. "새 클레임이 오면 카톡이 울린다"의 증명.
 # 토큰 보관은 settings 표(영속 DB) — 카카오 액세스 토큰은 수 시간짜리라 리프레시 토큰으로 그때그때 갱신한다.
 KAKAO_REST_KEY = os.environ.get("KAKAO_REST_KEY", "")          # 카카오 디벨로퍼스 앱의 REST API 키
+KAKAO_CLIENT_SECRET = os.environ.get("KAKAO_CLIENT_SECRET", "")  # 앱의 [보안] Client Secret이 「사용함」이면 필수
 SERVICE_URL = os.environ.get("RENDER_EXTERNAL_URL", "")        # Render가 자동으로 넣어주는 자기 주소
 
 
@@ -213,10 +214,20 @@ def _kakao_redirect_uri(request: Request) -> str:
 
 
 def _kakao_token_request(fields: dict) -> dict:
-    """카카오 토큰 서버(kauth) 호출 — 최초 발급과 갱신이 같은 주소를 쓴다."""
+    """카카오 토큰 서버(kauth) 호출 — 최초 발급과 갱신이 같은 주소를 쓴다.
+    실패 시 카카오는 사유를 JSON(에러 코드 KOE___)으로 준다 — 500으로 죽지 말고
+    그 JSON을 그대로 돌려줘서 화면에서 원인을 읽을 수 있게 한다."""
+    if KAKAO_CLIENT_SECRET:
+        fields = dict(fields, client_secret=KAKAO_CLIENT_SECRET)
     data = urllib.parse.urlencode(fields).encode()
     req = urllib.request.Request("https://kauth.kakao.com/oauth/token", data=data)
-    return json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
+    try:
+        return json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read().decode("utf-8"))
+        except Exception:
+            return {"error": "http_error", "error_description": f"토큰 서버 응답 {e.code}"}
 
 
 def kakao_access_token():
@@ -1089,7 +1100,9 @@ def kakao_callback(request: Request, code: str = "", error: str = ""):
     tok = _kakao_token_request({"grant_type": "authorization_code", "client_id": KAKAO_REST_KEY,
                                 "redirect_uri": _kakao_redirect_uri(request), "code": code})
     if "refresh_token" not in tok:
-        return HTMLResponse(f"카카오 토큰 발급 실패: {tok}")
+        # 대표 사례: KOE010 = 앱의 Client Secret이 「사용함」인데 서버에 KAKAO_CLIENT_SECRET이 없음
+        return HTMLResponse("카카오 토큰 발급 실패 — 아래 내용을 확인하세요.<br><pre>"
+                            + json.dumps(tok, ensure_ascii=False, indent=2) + "</pre>")
     con = db()
     setting_set(con, "kakao_refresh_token", tok["refresh_token"])
     setting_set(con, "kakao_access_token", tok["access_token"])
