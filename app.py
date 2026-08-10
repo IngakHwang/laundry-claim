@@ -20,14 +20,18 @@ app.py — 세탁공장 컴플레인 티켓 시스템 v1
 실행:  .venv\Scripts\python -m uvicorn app:app --reload
 """
 
+import json
 import os
 import sqlite3
+import time
+import urllib.parse
+import urllib.request
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -140,6 +144,18 @@ def db():
     return con
 
 
+def setting_get(con, key: str):
+    """설정 값 하나 읽기 (settings 표). 없으면 None."""
+    row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def setting_set(con, key: str, value: str) -> None:
+    """설정 값 저장 — 있으면 덮어쓴다. (UPSERT 문법은 SQLite·Postgres 동일)"""
+    con.execute("""INSERT INTO settings (key, value) VALUES (?,?)
+                   ON CONFLICT(key) DO UPDATE SET value=excluded.value""", (key, value))
+
+
 def insert_id(con, sql: str, params) -> int:
     """INSERT 하고 새 줄의 id를 돌려준다.
     SQLite는 lastrowid로 주지만 Postgres에는 그 기능이 없어 RETURNING id로 받는다."""
@@ -181,10 +197,80 @@ def attach_photos(con, action_id: int, photos: list[UploadFile] | None) -> None:
         con.execute("INSERT INTO photos (action_id, filename) VALUES (?,?)", (action_id, name))
 
 
-def notify(target: str, message: str) -> None:
-    """(v2 자리) 문자·알림 발송 — 지금은 아무것도 안 보낸다.
-    v2에서 SMS API(유료·발신번호 등록 필요)를 여기 끼우면 나머지 코드는 그대로다."""
-    pass
+# ── 카톡 알림 (v2, 2026-08-10) ───────────────────────────────────────
+# SMS 대신 카카오톡 「나에게 보내기」 — 무료 API의 유일한 발송 범위가 본인 계정이라(친구 발송은 심사),
+# 모든 알림은 연동한 관리자(사장) 본인의 카톡으로 간다. "새 클레임이 오면 카톡이 울린다"의 증명.
+# 토큰 보관은 settings 표(영속 DB) — 카카오 액세스 토큰은 수 시간짜리라 리프레시 토큰으로 그때그때 갱신한다.
+KAKAO_REST_KEY = os.environ.get("KAKAO_REST_KEY", "")          # 카카오 디벨로퍼스 앱의 REST API 키
+SERVICE_URL = os.environ.get("RENDER_EXTERNAL_URL", "")        # Render가 자동으로 넣어주는 자기 주소
+
+
+def _kakao_redirect_uri(request: Request) -> str:
+    """카카오 동의 뒤 돌아올 주소 — 등록된 Redirect URI와 글자까지 같아야 해서 한 곳에서 만든다.
+    배포에선 Render가 주는 공개 주소(https), 로컬에선 요청받은 주소 그대로."""
+    base = SERVICE_URL or str(request.base_url).rstrip("/")
+    return base + "/kakao/callback"
+
+
+def _kakao_token_request(fields: dict) -> dict:
+    """카카오 토큰 서버(kauth) 호출 — 최초 발급과 갱신이 같은 주소를 쓴다."""
+    data = urllib.parse.urlencode(fields).encode()
+    req = urllib.request.Request("https://kauth.kakao.com/oauth/token", data=data)
+    return json.loads(urllib.request.urlopen(req, timeout=10).read().decode("utf-8"))
+
+
+def kakao_access_token():
+    """보낼 때마다 유효한 액세스 토큰을 준비한다. 미연동이면 None.
+    남은 시간이 1분 미만이면 리프레시 토큰으로 갱신하고, 리프레시 토큰이 회전되어 새로 오면
+    (만료 1달 전부터 온다) 그것도 DB에 다시 저장 — 서버 재시작과 무관하게 연동이 유지된다."""
+    if not KAKAO_REST_KEY:
+        return None
+    con = db()
+    try:
+        access = setting_get(con, "kakao_access_token")
+        expires = setting_get(con, "kakao_access_expires")   # epoch 초 (글자로 저장)
+        if access and expires and time.time() < float(expires) - 60:
+            return access
+        refresh = setting_get(con, "kakao_refresh_token")
+        if not refresh:
+            return None                                       # 아직 연동 안 함 (/kakao/setup 전)
+        tok = _kakao_token_request({"grant_type": "refresh_token",
+                                    "client_id": KAKAO_REST_KEY, "refresh_token": refresh})
+        setting_set(con, "kakao_access_token", tok["access_token"])
+        setting_set(con, "kakao_access_expires", str(time.time() + tok.get("expires_in", 21600)))
+        if tok.get("refresh_token"):
+            setting_set(con, "kakao_refresh_token", tok["refresh_token"])
+        con.commit()
+        return tok["access_token"]
+    finally:
+        con.close()
+
+
+def kakao_send_to_me(text: str, url: str | None = None) -> bool:
+    """카카오톡 「나에게 보내기」 — 기본 텍스트 템플릿. 보냈으면 True, 미연동이면 False."""
+    token = kakao_access_token()
+    if not token:
+        return False
+    link = url or SERVICE_URL or "https://laundry-claim.onrender.com"
+    template = {"object_type": "text", "text": text,
+                "link": {"web_url": link, "mobile_web_url": link}, "button_title": "열어보기"}
+    data = urllib.parse.urlencode(
+        {"template_object": json.dumps(template, ensure_ascii=False)}).encode()
+    req = urllib.request.Request("https://kapi.kakao.com/v2/api/talk/memo/default/send", data=data)
+    req.add_header("Authorization", f"Bearer {token}")
+    urllib.request.urlopen(req, timeout=10)
+    return True
+
+
+def notify(target: str, message: str, ticket_id: int | None = None) -> None:
+    """알림 발송 — v2에서 카카오톡 「나에게 보내기」로 구현됨.
+    실패·미연동이어도 서비스는 계속 돈다 — 알림은 보조 수단이고,
+    원 알림 축은 여전히 ①공장 모니터 대시보드 ②담당자의 「내 클레임」 화면이다."""
+    try:
+        link = (SERVICE_URL + f"/c/{ticket_id}") if (SERVICE_URL and ticket_id) else None
+        kakao_send_to_me(f"[세탁 클레임] {message}\n담당: {target}", link)
+    except Exception as e:                 # 알림이 죽어도 접수는 살아야 한다
+        print("카톡 알림 실패(무시하고 계속):", e)
 
 
 def init_db() -> None:
@@ -252,6 +338,10 @@ def init_db() -> None:
         id        {auto_id},                  -- (한 칸에 파일명 여러 개를 욱여넣으면 정규화 위반)
         action_id INTEGER NOT NULL REFERENCES actions(id),
         filename  TEXT NOT NULL               -- uploads\\ 안의 파일명
+    );
+    CREATE TABLE IF NOT EXISTS settings (     -- 앱 설정 (카카오 토큰 등) — 재시작에도 남아야 해서 DB에
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
     );
     """
     con = db()
@@ -621,6 +711,8 @@ def dashboard(request: Request, factory: int | None = None):
     by_type = con.execute(f"SELECT c.type, COUNT(*) n {scoped} GROUP BY c.type ORDER BY n DESC",
                           fargs).fetchall()
     factories = con.execute("SELECT * FROM factories ORDER BY id").fetchall()
+    # 카톡 알림 연동 여부 — 사장 화면에 연동 상태·입구를 보여주기 위해
+    kakao_on = bool(KAKAO_REST_KEY) and setting_get(con, "kakao_refresh_token") is not None
     con.close()
     cols, days_old, photo_n = board_data(factory)   # 대시보드 상단의 칸반 (같은 공장 필터로)
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -629,6 +721,8 @@ def dashboard(request: Request, factory: int | None = None):
         "stats": stats, "by_type": by_type,
         "factories": factories, "cur_factory": factory,
         "allow_all": scope_of(user) is None,   # 본사만 공장 탭을 본다
+        "kakao_on": kakao_on,
+        "kakao_ready": bool(KAKAO_REST_KEY),   # 키 등록 전엔 연동 입구를 아예 숨긴다 (데모 방문자에게 설정 안내가 새지 않게)
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,
     })
 
@@ -842,7 +936,7 @@ def new_submit(request: Request, client_id: int = Form(...), type: str = Form(..
                     (ticket_id, user["name"], "instruct", instruction.strip(), now()))
     assignee = con.execute("SELECT name FROM staff WHERE id=?", (assignee_id,)).fetchone()
     con.commit(); con.close()
-    notify(assignee["name"], f"새 컴플레인 #{ticket_id}")   # v2에서 SMS가 될 자리
+    notify(assignee["name"], f"새 클레임 #{ticket_id} — {content.strip()[:60]}", ticket_id)
     return RedirectResponse(f"/c/{ticket_id}", status_code=303)
 
 
@@ -966,3 +1060,40 @@ def my_tickets(request: Request, staff_id: int):
         "instructions": instructions, "is_self": user["id"] == staff_id,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL, "ROLE_LABEL": ROLE_LABEL,
     })
+
+
+@app.get("/kakao/setup")
+def kakao_setup(request: Request):
+    """카톡 알림 연동 시작(사장 전용) — 카카오 동의 화면으로 보낸다.
+    무료 범위(나에게 보내기)라 알림 수신자는 여기서 동의한 본인 계정 하나다."""
+    user = require_user(request)
+    if user is None or user["role"] != "owner":
+        return RedirectResponse("/", status_code=303)
+    if not KAKAO_REST_KEY:
+        return HTMLResponse("KAKAO_REST_KEY 환경변수가 없습니다 — 카카오 디벨로퍼스 앱의 "
+                            "REST API 키를 서버 환경변수로 등록한 뒤 다시 시도하세요.")
+    return RedirectResponse(
+        "https://kauth.kakao.com/oauth/authorize?response_type=code"
+        f"&client_id={KAKAO_REST_KEY}&redirect_uri={_kakao_redirect_uri(request)}"
+        "&scope=talk_message")
+
+
+@app.get("/kakao/callback")
+def kakao_callback(request: Request, code: str = "", error: str = ""):
+    """카카오 동의 뒤 돌아오는 곳 — 받은 코드를 토큰으로 바꿔 DB에 저장하고, 확인 카톡을 보낸다."""
+    user = require_user(request)
+    if user is None or user["role"] != "owner":
+        return RedirectResponse("/", status_code=303)
+    if error or not code:
+        return HTMLResponse(f"카카오 연동 실패: {error or '인가 코드가 없습니다'}")
+    tok = _kakao_token_request({"grant_type": "authorization_code", "client_id": KAKAO_REST_KEY,
+                                "redirect_uri": _kakao_redirect_uri(request), "code": code})
+    if "refresh_token" not in tok:
+        return HTMLResponse(f"카카오 토큰 발급 실패: {tok}")
+    con = db()
+    setting_set(con, "kakao_refresh_token", tok["refresh_token"])
+    setting_set(con, "kakao_access_token", tok["access_token"])
+    setting_set(con, "kakao_access_expires", str(time.time() + tok.get("expires_in", 21600)))
+    con.commit(); con.close()
+    kakao_send_to_me("[세탁 클레임] 카톡 알림 연동 완료 — 새 클레임이 접수되면 이 채팅으로 알림이 옵니다.")
+    return RedirectResponse("/", status_code=303)

@@ -10,6 +10,11 @@
   <a class="tab {{ 'active' if cur_factory == f.id }}" href="/?factory={{ f.id }}">{{ f.name }}</a>
   {% endfor %}
   {% if cur_factory %}<a class="meta" href="/f/{{ cur_factory }}">이 공장 상세 →</a>{% endif %}
+  {# 카톡 알림(나에게 보내기) 상태 — 사장만, 그리고 서버에 REST 키가 있을 때만.
+     키 등록 전에 노출하면 데모 방문자가 설정 안내 문구를 만나게 된다 #}
+  {% if kakao_ready %}
+  <a class="meta" href="/kakao/setup" style="margin-left:auto">카톡 알림 {{ '✓ 연동됨 (재연동)' if kakao_on else '연동하기 →' }}</a>
+  {% endif %}
 </div>
 {% elif cur_factory %}
 <p class="meta">{% for f in factories if f.id == cur_factory %}{{ f.name }} 화면입니다 (내 공장 것만 보입니다){% endfor %}</p>
