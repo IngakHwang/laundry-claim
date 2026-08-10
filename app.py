@@ -41,7 +41,10 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # ── 한국어 표시용 이름표 (DB에는 영문 코드로 저장하고, 화면에서만 한국어로) ──
 TYPE_LABEL = {"quality": "세탁 품질", "delivery": "배송", "etc": "기타"}
-STATUS_LABEL = {"new": "접수", "acked": "확인됨", "working": "처리중", "done": "완료"}
+# 상태 new의 표시명은 「확인 대기」 — 예전 이름 「접수」는 등록 동작(접수하기·오늘 접수)과
+# 낱말이 겹쳐 같은 화면에서 다른 숫자를 세는 혼란을 만들었다 (2026-08-10 UI 점검 지적).
+# '접수'는 이제 동작(KIND_LABEL의 register)에만 쓴다.
+STATUS_LABEL = {"new": "확인 대기", "acked": "확인됨", "working": "처리중", "done": "완료"}
 KIND_LABEL = {"register": "접수", "instruct": "지시", "ack": "확인",
               "work": "처리 보고", "done": "완료 처리", "note": "메모"}
 ROLE_LABEL = {"owner": "본사", "manager": "공장장", "factory": "공장", "driver": "배송기사"}
@@ -438,8 +441,14 @@ def login_form(request: Request):
 
 @app.post("/login")
 def login_submit(staff_id: int = Form(...)):
-    """선택한 담당자 번호를 쿠키에 담는다 — 이후 모든 화면이 이 쿠키로 범위를 정한다."""
-    resp = RedirectResponse("/", status_code=303)
+    """선택한 담당자 번호를 쿠키에 담는다 — 이후 모든 화면이 이 쿠키로 범위를 정한다.
+    도착지는 역할에 따라 다르다: 현장 인력(공장·기사)의 목적지는 관리 지표가 아니라
+    「내 클레임」이므로 그리로 바로 보낸다 (2026-08-10 UI 점검 지적: 역할별 홈 위계)."""
+    con = db()
+    row = con.execute("SELECT role FROM staff WHERE id=?", (staff_id,)).fetchone()
+    con.close()
+    home = f"/me/{staff_id}" if row and row["role"] in ("factory", "driver") else "/"
+    resp = RedirectResponse(home, status_code=303)
     resp.set_cookie("uid", str(staff_id))
     return resp
 
@@ -488,8 +497,10 @@ def dashboard(request: Request, factory: int | None = None):
     fargs: tuple = (factory,) if factory else ()
     open_tickets = con.execute(TICKET_SELECT + " WHERE c.status != 'done'" + fwhere + """
         ORDER BY (c.severity = 'urgent') DESC, c.created_at ASC""", fargs).fetchall()
+    # 최근 완료는 현황판의 완료 열과 같은 상한(8건) — 한 화면에서 완료 개수가
+    # 7·8·5로 제각각 보이던 문제를 기준 통일로 없앤다 (2026-08-10 UI 점검 지적)
     done_recent = con.execute(TICKET_SELECT + " WHERE c.status = 'done'" + fwhere + """
-        ORDER BY c.done_at DESC LIMIT 5""", fargs).fetchall()
+        ORDER BY c.done_at DESC LIMIT 8""", fargs).fetchall()
     # 지표: 전화·문자가 절대 못 주는 숫자들 (공장 필터가 걸리면 그 공장 것만 센다)
     scoped = "FROM complaints c JOIN clients cl ON cl.id = c.client_id WHERE 1=1" + fwhere
     stats = {
@@ -546,7 +557,7 @@ def board_data(fid: int | None, client_id: int | None = None):
 
 @app.get("/board")
 def board(request: Request):
-    """칸반 보드 — 상태별 열(접수→확인됨→처리중→완료)에 티켓이 카드로 붙는다.
+    """칸반 보드 — 상태별 열(확인 대기→확인됨→처리중→완료)에 티켓이 카드로 붙는다.
     지라(Jira)식 시각화: 일의 흐름이 왼쪽에서 오른쪽으로 흘러가는 게 한눈에 보인다."""
     user = require_user(request)
     if user is None:

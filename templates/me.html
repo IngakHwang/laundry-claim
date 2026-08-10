@@ -26,19 +26,20 @@
     <form method="post" action="/c/{{ t.id }}/action">
       <input type="hidden" name="kind" value="ack">
       <input type="hidden" name="content" value="지시 확인">
-      <button class="small" type="submit">✅ 확인했습니다</button>
+      {# 배송 중 한 손으로 누르는 핵심 버튼 — 작게 만들지 않는다(전폭 기본 버튼) (점검 지적) #}
+      <button type="submit">✅ 확인했습니다</button>
     </form>
     {% else %}
     <form method="post" action="/c/{{ t.id }}/action" enctype="multipart/form-data">
       <label>처리 내용</label>
       <textarea name="content" placeholder="예: 섞인 수건 12장 회수 완료"></textarea>
       <label>사진 (선택, 여러 장 가능) — 처리 증빙</label>
-      <input type="file" name="photos" accept="image/*" capture="environment" multiple>
-      <select name="kind">
-        <option value="work">처리 보고 (계속 진행)</option>
-        <option value="done">완료 처리</option>
-      </select>
-      <button class="small" type="submit">기록하기</button>
+      {# capture 속성은 쓰지 않는다 — 카메라를 강제해 미리 찍어 둔 사진(갤러리)을 못 고른다(점검 지적) #}
+      <input type="file" name="photos" accept="image/*" multiple>
+      {# 「완료」를 드롭다운에 숨기지 않는다 — 기본값(처리 보고)에 묻혀 티켓이 영원히
+         처리중에 머물던 문제(점검 지적). 누른 버튼이 자기 kind 값을 제출한다. #}
+      <button type="submit" name="kind" value="work">처리 보고 기록 (계속 진행)</button>
+      <button class="alt-done" type="submit" name="kind" value="done">✅ 완료 처리</button>
     </form>
     {% endif %}
   {% endif %}

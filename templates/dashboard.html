@@ -17,7 +17,7 @@
 
 <div class="stats">
   <a class="stat" href="#sec-open" title="접수+확인됨+처리중의 합"><b>{{ stats.open }}</b><span>미완료 ↓</span></a>
-  <a class="stat" href="#col-new" title="상태가 「접수」인 것 — 담당자가 아직 확인 안 함"><b>{{ stats.unacked }}</b><span>확인 대기 ↓</span></a>
+  <a class="stat" href="#col-new" title="상태가 「확인 대기」인 것 — 담당자가 아직 확인 안 함"><b>{{ stats.unacked }}</b><span>확인 대기 ↓</span></a>
   <a class="stat" href="#board-top"><b>{{ stats.today }}</b><span>오늘 접수 ↓</span></a>
   <a class="stat" href="#sec-done"><b>{{ stats.avg_hours if stats.avg_hours is not none else "—" }}</b><span>평균 처리(시간) ↓</span></a>
 </div>

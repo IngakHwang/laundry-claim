@@ -1,7 +1,10 @@
 {% extends "base.html" %}
-{% block title %}담당자 선택 — 세탁 클레임{% endblock %}
+{% block title %}담당자별 클레임 — 세탁 클레임{% endblock %}
 {% block body %}
-<h1>누구세요? <span class="meta">(v1은 로그인 대신 이름 선택)</span></h1>
+{# 사장 전용 화면 — 사장은 배정 대상이 아니라서 담당자를 골라 그 사람의 클레임을 본다.
+   예전 제목 "누구세요?"는 로그인 화면으로 오해됐다(점검 지적) — 기능 이름을 그대로 부른다. #}
+<h1>담당자별 클레임</h1>
+<p class="meta">사장님은 담당자로 배정받지 않습니다 — 담당자를 고르면 그 사람에게 배정된 클레임이 보입니다.</p>
 {% for s in staff %}
 <a class="card" href="/me/{{ s.id }}"><b>{{ s.name }}</b> <span class="badge b-type">{{ ROLE_LABEL[s.role] }}</span></a>
 {% endfor %}

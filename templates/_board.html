@@ -1,30 +1,37 @@
-{# 칸반 보드 부품 — 대시보드 상단과 /board 화면이 같이 쓴다. 필요한 재료: cols, days_old, photo_n #}
+{# 칸반 현황판 부품 — 대시보드 상단과 /board 화면이 같이 쓴다. 필요한 재료: cols, days_old, photo_n #}
 <div class="board">
   {% for status, tickets in cols.items() %}
   <div class="col s-{{ status }}" data-status="{{ status }}" id="col-{{ status }}">
     <h3>{{ STATUS_LABEL[status] }} <span class="cnt">{{ tickets|length }}</span></h3>
     <p class="colsub">{{ {"new": "담당자가 아직 확인 안 함", "acked": "담당자가 봤음 — 착수 전",
-                         "working": "처리 진행 중", "done": "끝남 (최근 8건)"}[status] }}</p>
+                         "working": "처리 진행 중", "done": "끝남 — 최근 8건까지 표시"}[status] }}</p>
     {% for t in tickets %}
-    <a class="kcard {{ 'urgent' if t.severity == 'urgent' }}" draggable="true" data-id="{{ t.id }}" href="/c/{{ t.id }}">
-      <div class="title">
-        {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
-        #{{ t.id }} {{ t.client_name }}
-      </div>
-      <div class="body">{{ t.content }}</div>
-      <div class="meta">
-        <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
-        🏭 {{ t.factory_name.split(' ')[0] if t.factory_name else "?" }}
-        · 👤 <b>{{ t.assignee_name or "미배정" }}</b>
-        {% if photo_n.get(t.id) %} · 📷{{ photo_n[t.id] }}{% endif %}
-        {% if status != 'done' %} · {{ days_old[t.id] }}일째{% endif %}
-        {% if status != 'done' %}
-        {% set nxt = {"new": "acked", "acked": "working", "working": "done"}[status] %}
-        <button class="mv" type="button" data-id="{{ t.id }}" data-next="{{ nxt }}"
-                title="다음 단계로 옮기기 (끌어놓기와 같은 동작)">▶ {{ STATUS_LABEL[nxt] }}</button>
-        {% endif %}
-      </div>
-    </a>
+    {# 카드 = 「상세로 가는 링크」와 「이동 버튼」을 분리한 상자.
+       버튼을 링크 안에 겹치면 엄지가 빗나갈 때 상태 변경 대신 화면 이동이 일어난다(점검 지적) #}
+    <div class="kcard {{ 'urgent' if t.severity == 'urgent' }}" draggable="true" data-id="{{ t.id }}">
+      <a class="kbody" href="/c/{{ t.id }}">
+        <div class="title">
+          {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
+          #{{ t.id }} {{ t.client_name }}
+        </div>
+        <div class="body">{{ t.content }}</div>
+        <div class="meta">
+          <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
+          🏭 {{ t.factory_name.split(' ')[0] if t.factory_name else "?" }}
+          · 👤 <b>{{ t.assignee_name or "미배정" }}</b>
+          {% if photo_n.get(t.id) %} · 📷{{ photo_n[t.id] }}{% endif %}
+          {% if status != 'done' %} · {{ days_old[t.id] }}일째{% endif %}
+        </div>
+      </a>
+      {% if status != 'done' %}
+      {% set nxt = {"new": "acked", "acked": "working", "working": "done"}[status] %}
+      {# 라벨은 동사형 「~(으)로 →」 — 「▶ 확인됨」처럼 쓰면 "이 카드가 확인됨 상태"라는
+         현재 상태 배지로 오독된다(점검 지적). 색도 가려는 상태의 색을 입는다(mv-*) #}
+      <button class="mv mv-{{ nxt }}" type="button" data-id="{{ t.id }}" data-next="{{ nxt }}"
+              title="다음 단계로 옮기기 (끌어놓기와 같은 동작)">{{
+                {"acked": "확인됨으로 →", "working": "처리중으로 →", "done": "완료로 →"}[nxt] }}</button>
+      {% endif %}
+    </div>
     {% else %}
     <p class="meta" style="text-align:center; padding:12px 0">비어 있음</p>
     {% endfor %}
@@ -48,11 +55,13 @@ document.querySelectorAll('.col').forEach(function (col) {
     moveTicket(e.dataTransfer.getData('text/plain'), col.dataset.status);
   });
 });
-// 「▶ 다음 단계」 버튼 — 폰에는 끌어놓기가 없으므로(터치는 HTML 드래그 미지원) 버튼이 같은 일을 한다
+// 「~(으)로 →」 이동 버튼 — 폰에는 끌어놓기가 없으므로(터치는 HTML 드래그 미지원) 버튼이 같은 일을 한다
 document.querySelectorAll('.mv').forEach(function (b) {
   b.addEventListener('click', function (e) {
     e.preventDefault();          // 카드 링크로 넘어가는 것을 막고
     e.stopPropagation();
+    // 완료만은 한 번 묻는다 — 오탭 한 번으로 티켓이 닫히는 사고를 막는다(점검 지적)
+    if (b.dataset.next === 'done' && !confirm('이 클레임을 완료 처리할까요?')) return;
     moveTicket(b.dataset.id, b.dataset.next);
   });
 });

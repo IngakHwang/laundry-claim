@@ -9,7 +9,7 @@
 {% for s in items %}
 <form method="post" action="/login" style="display:inline-block; margin:0 6px 8px 0;">
   <input type="hidden" name="staff_id" value="{{ s.id }}">
-  <button class="small" type="submit" style="background:{{ '#1F5B43' if s.role == 'owner' else '#fff' }}; color:{{ '#fff' if s.role == 'owner' else '#222' }}; border:1px solid #C9CEC4;">
+  <button class="small" type="submit" style="background:{{ 'var(--brand)' if s.role == 'owner' else 'var(--surface)' }}; color:{{ '#fff' if s.role == 'owner' else 'var(--text)' }}; border:1px solid var(--line);">
     {{ s.name }} <small>({{ ROLE_LABEL[s.role] }}{% if s.duty %} · {{ s.duty }}{% endif %})</small>
   </button>
 </form>

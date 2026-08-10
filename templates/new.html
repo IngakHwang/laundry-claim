@@ -40,8 +40,9 @@
     {% endfor %}
   </select>
 
-  <label>사진 (선택, 여러 장 가능) — 폰에서는 바로 촬영됩니다</label>
-  <input type="file" name="photos" accept="image/*" capture="environment" multiple>
+  <label>사진 (선택, 여러 장 가능) — 촬영하거나 앨범에서 고릅니다</label>
+  {# capture 속성은 쓰지 않는다 — 카메라를 강제해 갤러리 선택이 막힌다(점검 지적) #}
+  <input type="file" name="photos" accept="image/*" multiple>
 
   <label>담당자에게 지시 (선택)</label>
   <textarea name="instruction" placeholder="예: 오늘 수거 때 회수해 올 것"></textarea>
