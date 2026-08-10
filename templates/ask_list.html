@@ -2,6 +2,37 @@
 {% import "_icons.html" as ic %}
 {% block title %}AI 채팅 — 세탁 클레임{% endblock %}
 
+{% block head %}
+<style>
+/* 이 화면(방 목록)은 폰에서 "상담방 고르는 화면"으로 남는다(대화 화면 진입은 메뉴에서
+   바로 /ask/chat으로 가게 됐지만, 폰의 대화 화면 안 「← 목록」 링크는 여전히 여기로 온다).
+   기존에는 base.html의 범용 .card(테두리 박스 카드)를 그대로 썼는데, 카톡·ChatGPT 등
+   실제 챗 목록은 카드가 아니라 "가늘고 긴 행"이 쌓이는 모양이다 — 한 화면에 더 많은 방을
+   보여주고, 눈이 위→아래로 훑기 쉽다. 그래서 이 화면 전용 클래스(.newchat, .chatrow)를
+   따로 두고 .card를 쓰지 않는다. */
+
+/* 「+ 새 상담 시작」 — 알약(pill) 버튼. ask.html 사이드바의 「+ 새 상담」(.newchat)과 같은
+   계열의 생김새(브랜드 옅은 배경 + 진한 글자 + 완전히 둥근 모서리)로 맞춰서, 두 화면 중
+   어느 쪽에서 새 상담을 시작하든 "같은 버튼"이라는 인상을 준다. */
+.newchat{background:var(--brand-soft); color:var(--brand-deep); font-weight:700; border-radius:999px;
+  padding:12px 18px; display:block; text-align:center; margin-bottom:14px; text-decoration:none;}
+.newchat:hover{box-shadow:var(--shadow);}
+
+/* 방 항목(.chatrow) — 카드의 테두리·둥근 모서리·그림자를 다 걷어내고, 아래쪽 실선 하나로만
+   항목을 구분하는 얇은 행으로 바꾼다(챗 목록의 관례). */
+.chatrow{display:block; padding:13px 6px; border-bottom:1px solid var(--border); color:var(--text); text-decoration:none;}
+/* 제목은 한 줄로 — 길면 줄바꿈 대신 말줄임표(...)로 자른다(사이드바 .chatitem과 같은 관례) */
+.chatrow b{display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+/* 부가정보(메시지 개수·시각) 줄 — base.html의 .meta(font-size:.82rem)보다 한 단계 더 작게.
+   선택자 자체의 구체도(.chatrow .meta, 클래스 2개)가 base.html의 .meta(클래스 1개)보다
+   높아서, 소스 순서와 무관하게 이 규칙이 항상 이긴다. */
+.chatrow .meta{font-size:.78rem;}
+/* 터치 시 눌림 피드백 — 카드의 hover(테두리색 변화) 대신, 폰에서 더 잘 느껴지는 배경색
+   변화로 "지금 이 행을 눌렀다"를 알려준다 */
+.chatrow:active{background:var(--brand-soft);}
+</style>
+{% endblock %}
+
 {% block body %}
 {# 세탁 상담 목록 — 카톡 채팅 목록처럼, 한 사람이 주제별로 여러 방을 두고 물어본다.
    방 자체(빈 대화)는 여기서 안 만든다 — /ask/chat(id 없이)로 들어가 첫 질문을 보내는
@@ -10,11 +41,11 @@
 <p class="meta">세탁 공정과 얼룩 처리 전문 상담원 — 주제별로 방을 나눠 물어보세요</p>
 
 {# 새 상담 시작 — id 없이 /ask/chat으로 가면 빈 방(아직 DB에 없는 상태)이 열린다 #}
-<a class="card" href="/ask/chat" style="text-align:center; font-weight:700; color:var(--brand-deep)">+ 새 상담 시작</a>
+<a class="newchat" href="/ask/chat">+ 새 상담 시작</a>
 
 {% for c in chats %}
-{# 방 카드 — 제목(첫 질문 앞 30자)과 메시지 개수·만든 시각을 함께 보여준다 #}
-<a class="card" href="/ask/chat?id={{ c.id }}">
+{# 방 행 — 제목(첫 질문 앞 30자)과 메시지 개수·만든 시각을 함께 보여준다(카드 대신 얇은 행) #}
+<a class="chatrow" href="/ask/chat?id={{ c.id }}">
   <b>{{ c.title }}</b>
   <div class="meta">메시지 {{ c.n }}개 · {{ c.created_at }}</div>
 </a>

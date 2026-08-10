@@ -33,6 +33,19 @@
    내용이 얼마 없어도 입력창이 뜨지 않고 화면 바닥까지 내려간다. */
 .askwrap{display:flex; gap:28px; align-items:stretch; min-height:calc(100vh - 90px);}
 
+/* 대화 칼럼(.convo)의 가운데점을 "화면 전체 기준" 중앙으로 옮긴다(인각님 지적).
+   .convo는 .askmain(=.askwrap에서 사이드바를 뺀 나머지) 안에서 가운데 정렬되는데,
+   .askwrap 자체가 왼쪽에 사이드바(232px)+간격(28px)=260px을 이미 먹고 시작하므로
+   "나머지의 가운데"는 화면 전체로 보면 그만큼 오른쪽으로 치우쳐 보인다.
+   해법 — 오른쪽에도 그 260px만큼 여백(padding-right)을 줘서 좌우 여백을 다시 대칭으로
+   맞춘다. 다만 창이 좁아지는 중간 폭에서 260px를 그대로 오른쪽에서 덜어내면 대화 폭이
+   너무 줄어들므로(가독성 붕괴), 화면이 넉넉히 넓을 때만 단계적으로 키운다:
+   1250px 미만 — 보정 없음(대화 폭 확보가 우선), 1250~1550px — 절반(130px)만 보정,
+   1550px 이상 — 전체(260px) 보정. 숫자 자체가 아니라 "여유 있을 때만, 그만큼만"이라는
+   원칙이 핵심이라 굳이 트랜지션 없이 계단식으로 끊는다. */
+@media (min-width:1250px){ .askwrap{padding-right:130px;} }
+@media (min-width:1550px){ .askwrap{padding-right:260px;} }
+
 /* 왼쪽 사이드바 — 폭 고정(232px), 페이지를 스크롤해도 화면 위쪽에 붙어 있도록(sticky)
    해서 대화가 길어져도 방 목록은 늘 보인다. 대화 개수가 많아지면 사이드바 자체 안에서만
    스크롤(overflow-y:auto)하게 해서 페이지 전체 스크롤과 분리한다.
@@ -79,18 +92,24 @@
 .convo{width:100%; max-width:800px; margin:0 auto; display:flex; flex-direction:column; flex:1;}
 
 /* 폰 화면(860px 이하) — 사이드바를 놓을 공간이 없고, 방을 고르는 역할은 이미 /ask 목록
-   화면이 맡고 있으므로 사이드바를 통째로 숨긴다. 대신 대화 화면 안의 「← 상담 목록」
-   링크(.backlink)로 그 목록 화면으로 돌아갈 수 있게 해둔다. */
+   화면이 맡고 있으므로 사이드바를 통째로 숨긴다. 대신 대화 화면 위쪽 상단 바(.phonebar)의
+   「← 목록」·「+ 새 상담」 두 링크로 목록 화면과 새 상담 시작 둘 다 여기서 바로 오갈 수 있게
+   해둔다(이전에는 「← 상담 목록」 하나뿐이라 새 상담을 시작하려면 목록까지 가야 했다). */
 @media (max-width:860px){
   .asknav{display:none;}
   /* 폰은 상단 내비(aside.side)가 줄바꿈돼 두세 줄을 차지해 데스크톱보다 뺄 높이가 더
      크다. 정확히 맞출 필요는 없다 — 입력창이 화면 바닥 근처에만 오면 목적은 달성된다. */
   .askwrap{min-height:calc(100vh - 240px);}
 }
-/* 데스크톱(861px 이상) — 사이드바로 방을 바로 오갈 수 있으니, 폰 전용이던
-   「← 상담 목록」 링크는 중복이라 숨긴다. */
+/* 폰 전용 상단 바 — 「← 목록」과 「+ 새 상담」을 양 끝에 나눠 놓는다(justify-content:space-between).
+   두 링크 모두 .meta 클래스를 그대로 쓰되(글자색·크기는 거기서 물려받고), 여기서는 패딩만
+   10px 이상 얹어 손가락으로도 정확히 눌리는 터치 타깃을 만든다. */
+.phonebar{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+.phonebar .meta{padding:10px 6px; display:inline-block;}
+/* 데스크톱(861px 이상) — 사이드바가 "방 목록 보기"와 "새 상담 시작"(.newchat) 두 역할을
+   이미 다 하고 있으니, 폰 전용이던 상단 바(.phonebar) 전체를 통째로 숨긴다. */
 @media (min-width:861px){
-  .backlink{display:none;}
+  .phonebar{display:none;}
 }
 
 /* 말풍선 한 행 — 상담원은 왼쪽 정렬, 사용자는 오른쪽 정렬(챗 UI의 기본 관례) */
@@ -154,8 +173,12 @@
 }
 
 /* 입력줄 — 화면 하단에 붙박이(sticky). 스크롤해도 늘 손 닿는 자리에 남는다.
-   배경을 페이지 바탕색으로 깔고 위쪽에 패딩을 둬서, 그 위로 스크롤되는 말풍선과 시각적으로 분리한다 */
-.inputbar{position:sticky; bottom:0; background:var(--bg); padding:10px 0 14px;}
+   배경을 페이지 바탕색으로 깔고 위쪽에 패딩을 둬서, 그 위로 스크롤되는 말풍선과 시각적으로 분리한다.
+   아래쪽 패딩 = 기본 14px + env(safe-area-inset-bottom) — 아이폰(노치·홈바 기종)에서 화면
+   맨 아래는 홈바가 깔고 앉는 영역이라, 그만큼을 더 띄워야 입력줄이 홈바에 가리지 않는다.
+   env()를 모르는 구형 브라우저는 그 값을 0으로 계산하므로 calc() 자체는 항상 안전하게 동작한다
+   (base.html의 viewport-fit=cover가 있어야 이 env 값이 0이 아닌 실제 여백을 돌려준다). */
+.inputbar{position:sticky; bottom:0; background:var(--bg); padding:10px 0 calc(14px + env(safe-area-inset-bottom));}
 
 /* 알약형(pill) 입력 컨테이너 — 텍스트칸과 보내기 버튼을 한 덩어리로 감싼다 */
 .inputbar .pill{display:flex; align-items:flex-end; background:var(--surface); border:1px solid var(--border);
@@ -204,8 +227,13 @@
       감싸 가운데 정렬한다(위 .convo CSS 규칙 참고). #}
    <div class="convo">
     <h1>AI 채팅</h1>
-    {# 이 방에서 목록으로 되돌아가는 길 — 폰 화면 전용(데스크톱은 사이드바로 대신한다, backlink 클래스 참고) #}
-    <a class="meta backlink" href="/ask">← 상담 목록</a>
+    {# 폰 화면 전용 상단 바(.phonebar) — 데스크톱은 사이드바가 목록·새 상담 두 역할을 다 하므로
+       CSS(.phonebar{display:none}, 861px 이상)로 통째로 숨긴다. 「← 목록」은 방 목록 화면으로,
+       「+ 새 상담」은 방 번호 없이 /ask/chat으로 가서 새 방을 연다(사이드바의 .newchat과 같은 길). #}
+    <div class="phonebar">
+      <a class="meta" href="/ask">← 목록</a>
+      <a class="meta" href="/ask/chat">+ 새 상담</a>
+    </div>
 
     <div id="chat">
       {# 이 방에 저장된 대화가 있으면 서버에서 전부 그대로 그린다(새로고침해도 안 사라지는 이유).
