@@ -58,6 +58,12 @@
 /* 지금 보고 있는 방 — 클래스명을 base.html의 현재 메뉴 표시(.on)와 겹치지 않게 now로 따로 둔다 */
 .asknav .chatitem.now{background:var(--brand-soft); color:var(--brand-deep); font-weight:700;}
 
+/* 항목④ 살아있는 챗 — 새 방이 JS로 목록에 막 꽂힐 때(항목①)만 anim-in 클래스가 붙는다.
+   왼쪽에서 살짝 밀려 들어오며 나타나서 "방금 새로 생겼다"는 것을 눈으로도 알려준다.
+   서버가 처음부터 그려낸 기존 방 목록에는 이 클래스가 없으므로 페이지를 열 때는 움직이지 않는다. */
+@keyframes chatitem-in{from{opacity:0; transform:translateX(-6px)} to{opacity:1; transform:none}}
+.asknav .chatitem.anim-in{animation:chatitem-in .3s ease both;}
+
 /* 오른쪽 대화 영역 — 사이드바가 차지한 나머지 폭을 전부 쓴다(flex:1, min-width:0은
    flex 자식이 내용 때문에 줄어들지 않고 밀려나는 것을 막는 표준 처방). 세로 방향도
    flex(column)로 잡아서, 안의 #chat이 남는 높이를 다 먹어 입력창(.inputbar)을 화면
@@ -115,6 +121,14 @@
 #chat .chip{font-size:.75rem; background:var(--bg); border:1px solid var(--border); border-radius:999px;
   padding:2px 10px; color:var(--sub);}
 
+/* 항목⑤ "다시 시도" 버튼 — 오류 말풍선 바로 아래, .msgcol 안에 놓인다.
+   ⚠️ 캐스케이드 함정(파일 상단 주석 참고): base.html의 전역 button{width:100%; margin-top:12px; ...}
+   (칸을 꽉 채우는 큰 버튼이 기본 전제)을 반드시 이겨야 한다. 이 <style>은 소스에서 base.html보다
+   앞에 있어 "같은 구체도"라면 지지만, 클래스 선택자(.retrybtn, 구체도 0-1-0)는 element 선택자
+   (button, 구체도 0-0-1)보다 항상 더 세므로 소스 순서와 무관하게 이 규칙이 이긴다. */
+.retrybtn{width:auto; margin:2px 0 0; padding:7px 14px; font-size:.85rem; background:var(--surface);
+  color:var(--brand-deep); border:1px solid var(--border); border-radius:999px; box-shadow:var(--shadow);}
+
 /* 답 대기 중 — 점 3개가 차례로 튀어 오르는 타이핑 표시(말풍선 자리를 그대로 빌려 쓴다) */
 #chat .typing{display:flex; gap:5px; align-items:center; padding:4px 2px;}
 #chat .typing span{width:7px; height:7px; border-radius:50%; background:var(--sub); display:inline-block;
@@ -124,6 +138,19 @@
 @keyframes ask-bounce{
   0%, 60%, 100%{transform:translateY(0); opacity:.4;}
   30%{transform:translateY(-4px); opacity:1;}
+}
+
+/* 항목④ 살아있는 챗 — 말풍선이 통째로 툭 떨어지는 대신, 아래에서 살짝 떠오르며 나타난다.
+   #chat .msg 전체(사용자·상담원 양쪽, 저장된 기존 대화를 새로 열 때도 포함)에 걸어서
+   대화창이 켜질 때/새 말풍선이 붙을 때 한결같이 같은 느낌을 준다. */
+@keyframes msg-in{from{opacity:0; transform:translateY(8px)} to{opacity:1; transform:none}}
+#chat .msg{animation:msg-in .25s ease both;}
+
+/* 접근성: 시스템에서 "동작 줄이기"를 켜둔 사용자에게는 등장 모션을 아예 재우지 않는다 —
+   전정기관 이상 등으로 화면이 움직이면 어지러움을 느끼는 사람을 위한 배려(표준 미디어쿼리).
+   위 두 애니메이션 규칙과 같은 구체도라서, 이 규칙이 "이기려면" 소스에서 반드시 뒤에 있어야 한다. */
+@media (prefers-reduced-motion: reduce){
+  #chat .msg, .asknav .chatitem.anim-in{animation:none;}
 }
 
 /* 입력줄 — 화면 하단에 붙박이(sticky). 스크롤해도 늘 손 닿는 자리에 남는다.
@@ -254,10 +281,31 @@ var AVATAR_HTML = avaEl ? avaEl.innerHTML : '';
 var CHAT_ID = {{ chat_id }};
 // 전송 중 중복 클릭·중복 Enter를 막는 잠금 플래그 (true인 동안은 새 전송을 받지 않는다)
 var sending = false;
+// 가장 최근에 보낸 질문 문자열을 보관해 두는 변수(항목⑤). sendQuestion()이 호출될 때마다 갱신된다.
+// 실제 "다시 시도" 버튼은 자신이 속한 오류 말풍선이 실패했던 그 순간의 질문을 클로저로 따로 쥐고
+// 있어(addBotBubble의 retryText 매개변수), 이 변수에 기대지 않고도 정확히 그 질문을 재전송한다 —
+// 그렇게 해야, 다른 오류 말풍선이 화면에 여러 개 남아 있어도(또는 그 사이 새 질문을 보냈어도)
+// 「다시 시도」를 누른 그 말풍선의 질문이 아닌 엉뚱한(가장 최근) 질문이 재전송되는 사고를 막는다.
+var lastQuestion = '';
 
 // 대화 스레드 맨 아래로 화면을 부드럽게 내린다 — 말풍선을 하나 추가할 때마다 호출한다.
 function scrollToBottom() {
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}
+
+// 타자기 효과(항목②)가 매 프레임 부르는 즉시-이동 버전 — smooth 스크롤을 프레임마다(초당
+// 수십 번) 다시 시작시키면 애니메이션끼리 서로 밀어내며 화면이 버벅인다. 진행 중에는
+// 부드러움 없이 그냥 바닥에 붙이고, 다 그려진 뒤 한 번만 scrollToBottom()으로 마무리한다.
+function scrollToBottomInstant() {
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+// 지금 화면이 대화 바닥에서 150px 이내인지를 잰다 — 타자기가 답을 그리는 동안(항목②) 이
+// 범위 안에 있을 때만 자동으로 따라 내려간다. 사용자가 일부러 위로 스크롤해서 예전 대화를
+// 읽는 중이라면(바닥에서 150px보다 멀리 있다면) 화면을 강제로 끌어내려 방해하지 않는다.
+function isNearBottom() {
+  var scrolledTo = window.scrollY + window.innerHeight; // 지금 보이는 화면의 맨 아래 지점
+  return (document.body.scrollHeight - scrolledTo) < 150;
 }
 
 // 상담원 말풍선 왼쪽에 붙는 원형 아바타를 하나 새로 만든다(JS로 그리는 말풍선마다 필요).
@@ -294,7 +342,9 @@ function addTypingBubble() {
   col.appendChild(bubble);
   var wait = document.createElement('div');
   wait.className = 'meta';
-  wait.textContent = '첫 질문은 상담원을 깨우느라 2분까지 걸릴 수 있어요';
+  // 항목③: "언제 끝날지 모를 대기"가 아니라 "지금 실제로 답을 쓰고 있다"는 진행 안내로 바꾼다.
+  // 모델이 쉬고 있다가 깨는 경우(첫 질문)에만 오래 걸릴 수 있다는 설명은 그대로 덧붙여 둔다.
+  wait.textContent = '상담원이 답변을 쓰고 있어요 — 쉬고 있었다면 첫 답변은 2분까지 걸릴 수 있어요';
   col.appendChild(wait);
   row.appendChild(col);
   chat.appendChild(row);
@@ -302,10 +352,26 @@ function addTypingBubble() {
   return row;
 }
 
+// 항목⑤ "다시 시도" 버튼 — 오류 말풍선 아래에 붙여, 누르면 실패했던 바로 그 질문으로
+// sendQuestion을 다시 부른다. 사용자 말풍선이 화면에 한 번 더 찍히는 것을 그대로 두는 이유는
+// 의도적이다 — 재시도도 하나의 시도로 DB(chat_msgs)와 화면 양쪽에 똑같이 남아야, 조치 기록
+// (actions)이 append-only인 것과 같은 결로 "몇 번 시도했는지"가 지워지지 않고 쌓인다.
+function addRetryButton(col, questionText) {
+  var btn = document.createElement('button');
+  btn.type = 'button'; // 이 화면엔 <form>이 없지만, 관례대로 submit 취급되지 않게 명시해 둔다
+  btn.className = 'retrybtn';
+  btn.textContent = '다시 시도';
+  btn.addEventListener('click', function () {
+    sendQuestion(questionText);
+  });
+  col.appendChild(btn);
+}
+
 // 상담원의 실제 답(또는 오류·거절 안내)을 왼쪽 정렬 말풍선으로 추가한다.
-// sources: [{n, title, badge}] 형태의 근거 목록 — 있으면 말풍선 아래에 작은 칩으로 늘어놓는다.
-// isError가 true면 오류/거절 안내이므로 글자색을 본문보다 옅은 보조색으로 낮춘다.
-function addBotBubble(text, sources, isError) {
+// sources: [{n, title, badge}] 형태의 근거 목록 — 있으면 답이 다 그려진 뒤 말풍선 아래에 칩으로 늘어놓는다.
+// isError가 true면 오류/거절 안내이므로 타자기 없이 즉시 보여주고 "다시 시도" 버튼을 붙인다.
+// retryText: 오류일 때 "다시 시도"가 재전송할 질문 문자열(정상 답에서는 쓰지 않는다).
+function addBotBubble(text, sources, isError, retryText) {
   var row = document.createElement('div');
   row.className = 'msg bot';
   row.appendChild(makeAva());
@@ -319,23 +385,64 @@ function addBotBubble(text, sources, isError) {
   //     그대로 보여줘야 사서 방식(아는 것만 답하고, 모르면 모른다고 말한다)의 계약이 지켜진다.
   //  ② 서버·모델이 실수로라도 HTML 조각을 돌려주면, innerHTML은 그걸 실행 가능한 마크업으로
   //     그대로 심어버린다(주입 위험) — textContent는 무엇이 오든 "글자"로만 취급해 원천 차단한다.
-  bubble.textContent = text;
+  //  타자기 효과(아래)도 이 원칙을 그대로 따른다 — 매 프레임 "전체 문자열의 앞부분을 자른 것"만
+  //  textContent에 넣을 뿐, 어떤 프레임에서도 innerHTML을 쓰지 않는다.
   if (isError) bubble.style.color = 'var(--sub)'; // 오류·거절 안내는 본문보다 옅게
   col.appendChild(bubble);
-  if (sources && sources.length) {
-    var srcRow = document.createElement('div');
-    srcRow.className = 'sources';
-    sources.forEach(function (s) {
-      var chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.textContent = '근거 ' + s.n + ' · ' + s.title + (s.badge ? ' ✓' : ''); // 제목도 서버 문자열 — textContent만
-      srcRow.appendChild(chip);
-    });
-    col.appendChild(srcRow);
-  }
   row.appendChild(col);
-  chat.appendChild(row);
-  scrollToBottom();
+  chat.appendChild(row); // 먼저 빈 말풍선으로 자리를 잡아 두고, 글자는 이어서 채운다(타자기 자리 확보)
+
+  // 근거 칩을 붙이는 마무리 동작 — 정상 답은 타자기가 다 끝난 뒤, 오류 답은 곧바로 호출한다.
+  function attachSources() {
+    if (sources && sources.length) {
+      var srcRow = document.createElement('div');
+      srcRow.className = 'sources';
+      sources.forEach(function (s) {
+        var chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = '근거 ' + s.n + ' · ' + s.title + (s.badge ? ' ✓' : ''); // 제목도 서버 문자열 — textContent만
+        srcRow.appendChild(chip);
+      });
+      col.appendChild(srcRow);
+    }
+  }
+
+  if (isError) {
+    // 오류·거절 안내는 타자기 연출 없이 즉시 전부 보여준다 — 나쁜 소식을 일부러 천천히 보여줄 이유가 없다
+    bubble.textContent = text;
+    attachSources(); // 오류 답은 sources가 항상 빈 배열이지만, 한 경로로 통일해 둔다
+    addRetryButton(col, retryText); // 항목⑤ — 실패한 질문을 그대로 다시 보낼 수 있게
+    scrollToBottom();
+    return;
+  }
+
+  // 접근성: 시스템에서 "동작 줄이기"를 켜둔 사용자에게는 타자기를 생략하고 바로 전체를 보여준다
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) {
+    bubble.textContent = text;
+    attachSources();
+    scrollToBottom();
+    return;
+  }
+
+  // 항목② 타자기 효과: requestAnimationFrame으로 한 프레임에 3~4자씩 늘려간다.
+  // 대부분 화면이 초당 60프레임이므로 평균 3.5자/프레임이면 대략 초당 210자 — 답답하지 않게 흐른다.
+  var i = 0;
+  function step() {
+    i += 3 + Math.floor(Math.random() * 2); // 3 또는 4자씩 — 완전히 일정한 간격이면 오히려 기계적으로 보인다
+    var done = i >= text.length;
+    // 항상 "전체 문자열의 앞부분을 자른 것"만 넣는다(innerHTML 아님) — 위 불변식 그대로 유지
+    bubble.textContent = done ? text : text.slice(0, i);
+    // 사용자가 바닥 근처에 있을 때만 따라 내려간다 — 위로 스크롤해 지난 대화를 읽는 중이면 그대로 둔다
+    if (isNearBottom()) scrollToBottomInstant();
+    if (done) {
+      attachSources(); // 근거 칩은 타자기가 다 끝난 뒤에만 붙인다(항목② 요구사항)
+      if (isNearBottom()) scrollToBottom(); // 칩이 붙어 늘어난 높이까지 마지막으로 한 번 더 부드럽게 맞춘다
+    } else {
+      requestAnimationFrame(step);
+    }
+  }
+  requestAnimationFrame(step);
 }
 
 // 입력창 높이를 내용에 맞춰 늘린다 — 1줄로 시작해서 최대 4줄까지 자라고, 그 이상은 안에서 스크롤.
@@ -349,17 +456,51 @@ function autoGrow() {
 }
 q.addEventListener('input', autoGrow);
 
-// 질문 하나를 보내는 전체 흐름: 다듬기 → 사용자 말풍선 → 타이핑 말풍선 → 서버 호출 → 결과 반영.
-function send() {
-  if (sending) return; // 이미 보내는 중이면 무시(중복 전송 방지)
-  var text = q.value.trim(); // 질문 앞뒤 공백 제거
-  if (text.length < 2) return; // 2자 미만 질문은 무시
+// 항목①: 방금 새로 만들어진 방을 사이드바 「최근」 목록 맨 위에 즉시 끼워 넣는다.
+// 지금까지는 새로고침해야만 이 방이 목록에 나타났다 — 응답이 도착하는 즉시 반영해 "살아있는"
+// 챗처럼 보이게 한다. 폰 화면에서는 CSS(.asknav{display:none})가 사이드바 자체를 숨기므로,
+// 여기서 DOM에 항목을 추가해도 화면에는 아무 영향이 없다(무해) — 그래서 화면 폭을 따로
+// 가리지 않고 (데스크톱·폰 구분 없이) 항상 호출한다.
+function addSidebarChatItem(chatId, questionText) {
+  var nav = document.querySelector('.asknav');
+  if (!nav) return; // 방어적: 혹시 사이드바 자체가 없는 화면이면 조용히 넘어간다
+
+  // 지금까지 "지금 보는 방"으로 표시돼 있던 항목이 있다면 표시를 뗀다 — 새 방이 이제 그 자리다
+  var prevNow = nav.querySelector('.chatitem.now');
+  if (prevNow) prevNow.classList.remove('now');
+
+  var label = nav.querySelector('.navlabel');
+  if (!label) {
+    // 이 방이 첫 방이라 "최근" 라벨 자체가 아직 없던 경우 — 「+ 새 상담」 다음에 라벨부터 만들어 넣는다
+    label = document.createElement('div');
+    label.className = 'navlabel';
+    label.textContent = '최근';
+    var newchat = nav.querySelector('.newchat');
+    newchat.insertAdjacentElement('afterend', label);
+  }
+
+  var a = document.createElement('a');
+  // now = 지금 보는 방, anim-in = 항목④의 진입 애니메이션(왼쪽에서 살짝 들어온다)
+  a.className = 'chatitem now anim-in';
+  a.href = '/ask/chat?id=' + chatId;
+  a.title = questionText; // 서버가 그리는 기존 항목과 같은 관례 — 길어서 잘린 제목을 hover로 다 볼 수 있게
+  a.textContent = questionText.slice(0, 30); // 목록 제목 규칙과 맞춰 질문 앞 30자만(textContent — 안전)
+  label.insertAdjacentElement('afterend', a); // 라벨 바로 다음(=목록 맨 위)에 꽂는다
+}
+
+// 질문 하나를 실제로 서버에 보내는 흐름 — 사용자 말풍선 → 타이핑 말풍선 → 서버 호출 → 결과 반영.
+// 입력칸(q)을 거치지 않고 임의의 문자열을 보낼 수 있도록 send()에서 분리했다. 이렇게 갈라 둬야
+// 「다시 시도」 버튼(항목⑤)이 입력칸에 다시 타이핑하지 않고도 실패했던 질문을 그대로 재전송할 수 있다.
+function sendQuestion(text) {
+  if (sending) return; // 이미 보내는 중이면 무시(중복 전송 방지) — 재시도 버튼 연타도 여기서 막힌다
+  text = (text || '').trim();
+  if (text.length < 2) return; // 방어적 재검증 — 입력칸을 거치지 않는 호출 경로(재시도 버튼)도 있어서다
+  lastQuestion = text; // "다시 시도"가 참조할 마지막 질문을 보관해 둔다(항목⑤)
   sending = true;
   q.disabled = true;
   sendBtn.disabled = true; // 전송 중에는 입력·버튼 모두 잠금
   addUserBubble(text);
-  q.value = '';
-  autoGrow(); // 비운 뒤 입력창을 다시 1줄 높이로 되돌린다
+  var wasNewChat = (CHAT_ID === 0); // 이 요청을 보내는 시점에 아직 방이 없었는지(항목① 판단 기준)
   var typingRow = addTypingBubble();
   var fd = new FormData();
   fd.append('question', text); // 서버 계약(POST /api/ask, FormData 필드 question)은 그대로 유지 — 백엔드 수정 없음
@@ -374,17 +515,21 @@ function send() {
         // 방금 그 방(대화 이어보기)이 열린다 — 안 바꾸면 새로고침마다 매번 새 방이 될 뻔했다.
         CHAT_ID = body.chat_id;
         history.replaceState(null, '', '/ask/chat?id=' + CHAT_ID);
+        if (wasNewChat) {
+          // 방이 이번에 막 생겼다 — 사이드바 「최근」에 새로고침 없이 바로 항목을 끼워 넣는다(항목①)
+          addSidebarChatItem(CHAT_ID, text);
+        }
       }
       if (body.ok) {
         addBotBubble(body.answer, body.sources || [], false);
       } else {
-        addBotBubble(body.error || '연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', [], true);
+        addBotBubble(body.error || '연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', [], true, text);
       }
     })
     .catch(function () {
       // 네트워크 자체가 끊긴 경우 — 서버가 응답을 못 준 것과 같은 자리에 안내를 띄운다
       typingRow.remove();
-      addBotBubble('연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', [], true);
+      addBotBubble('연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', [], true, text);
     })
     .finally(function () {
       sending = false;
@@ -392,6 +537,16 @@ function send() {
       sendBtn.disabled = false;
       q.focus();
     });
+}
+
+// 입력칸 껍데기 — 입력칸 값을 읽어 다듬고 비운 뒤, 실제 전송은 sendQuestion에 맡긴다(항목⑤ 리팩터).
+function send() {
+  if (sending) return; // 이미 보내는 중이면 입력칸 값을 건드리지 않는다
+  var text = q.value.trim(); // 질문 앞뒤 공백 제거
+  if (text.length < 2) return; // 2자 미만 질문은 무시
+  q.value = '';
+  autoGrow(); // 비운 뒤 입력창을 다시 1줄 높이로 되돌린다
+  sendQuestion(text);
 }
 
 // Enter만 누르면 전송, Shift+Enter는 줄바꿈(기본 동작을 막지 않고 그대로 둔다).
