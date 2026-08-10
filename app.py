@@ -3,7 +3,8 @@ r"""
 app.py — 세탁공장 컴플레인 티켓 시스템 v1
 
 구조 (요청이 들어오면):
-  브라우저 → FastAPI(이 파일의 함수들) → SQLite(db.sqlite3) → HTML(templates\) → 브라우저
+  브라우저 → FastAPI(이 파일의 함수들) → DB → HTML(templates\) → 브라우저
+  DB = 로컬 개발은 SQLite(db.sqlite3), 배포는 Postgres(DATABASE_URL 환경변수가 있으면 자동 전환 — v2 이관)
 
 화면 5개:
   /            공장 대시보드 — 미처리 티켓이 위에, 15초마다 자동 새로고침 (공장 모니터용)
@@ -19,6 +20,7 @@ app.py — 세탁공장 컴플레인 티켓 시스템 v1
 실행:  .venv\Scripts\python -m uvicorn app:app --reload
 """
 
+import os
 import sqlite3
 import uuid
 from datetime import datetime
@@ -55,16 +57,104 @@ def now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
-def db() -> sqlite3.Connection:
-    """DB 연결을 연다. Row 팩토리 = 결과를 딕셔너리처럼 열 이름으로 꺼내기 위해."""
+# ── DB 백엔드 선택 (v2: 무료 Postgres 이관, 2026-08-10) ──────────────────
+# DATABASE_URL 환경변수가 있으면 Postgres(배포·Neon), 없으면 SQLite(로컬 개발).
+# 왜 둘 다 지원하나: 로컬은 파일 하나(db.sqlite3)로 간편하게 돌리고,
+# 배포는 서버 재시작마다 데이터가 날아가던 문제(무료 서버 디스크 비영속)를 외부 DB로 푼다.
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+IS_PG = bool(DATABASE_URL)
+if IS_PG:
+    import psycopg      # Postgres 드라이버 — 로컬 SQLite만 쓸 때는 설치 없이도 돌게 조건부로 불러온다
+
+
+class PgRow:
+    """Postgres 결과 한 줄을 sqlite3.Row처럼 쓰게 하는 껍데기.
+    sqlite3.Row는 row[0](번호)도 row["name"](열 이름)도 되는데 기존 코드가 둘 다 쓰므로,
+    Postgres 쪽도 똑같이 맞춰야 본문 코드를 안 고친다. 화면(Jinja)의 t.id 접근도
+    「속성 실패 → 대괄호 접근」으로 넘어가는 Jinja 규칙 덕에 이걸로 동작한다."""
+    __slots__ = ("_cols", "_vals")
+
+    def __init__(self, cols, vals):
+        self._cols = cols     # 열 이름 목록
+        self._vals = vals     # 값 목록 (열 순서대로)
+
+    def __getitem__(self, key):          # row[0] 또는 row["name"] 양쪽 지원
+        if isinstance(key, int):
+            return self._vals[key]
+        return self._vals[self._cols.index(key)]
+
+    def __iter__(self):                  # dict(커서.fetchall())처럼 쌍으로 묶는 기존 용법 지원
+        return iter(self._vals)
+
+    def __len__(self):
+        return len(self._vals)
+
+    def keys(self):                      # sqlite3.Row.keys()와 같은 이름
+        return self._cols
+
+
+def _pg_rows(cursor):
+    """psycopg의 행 팩토리 — 결과 각 줄을 PgRow로 감싼다."""
+    cols = [d.name for d in cursor.description] if cursor.description else []
+
+    def make(vals):
+        return PgRow(cols, vals)
+    return make
+
+
+class PgConn:
+    """psycopg 연결을 sqlite3.Connection처럼 보이게 하는 얇은 껍데기.
+    두 DB의 차이 나는 부분만 여기서 흡수한다:
+    ①자리표 문자(SQLite ? → Postgres %s) ②executemany가 커서에만 있는 것."""
+
+    def __init__(self, con):
+        self._con = con
+
+    def execute(self, sql, params=()):
+        return self._con.execute(sql.replace("?", "%s"), params)
+
+    def executemany(self, sql, rows):
+        with self._con.cursor() as cur:
+            cur.executemany(sql.replace("?", "%s"), rows)
+
+    def commit(self):
+        self._con.commit()
+
+    def close(self):
+        self._con.close()
+
+
+def db():
+    """DB 연결을 연다 — 환경변수에 따라 Postgres(배포) 또는 SQLite(로컬).
+    어느 쪽이든 결과 줄은 번호·열 이름 양쪽으로 꺼낼 수 있다."""
+    if IS_PG:
+        return PgConn(psycopg.connect(DATABASE_URL, row_factory=_pg_rows))
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")   # 없는 거래처·담당자를 가리키는 데이터가 못 들어오게
     return con
 
 
+def insert_id(con, sql: str, params) -> int:
+    """INSERT 하고 새 줄의 id를 돌려준다.
+    SQLite는 lastrowid로 주지만 Postgres에는 그 기능이 없어 RETURNING id로 받는다."""
+    if IS_PG:
+        return con.execute(sql + " RETURNING id", params).fetchone()[0]
+    return con.execute(sql, params).lastrowid
+
+
+def sql_avg_hours(done: str, created: str) -> str:
+    """「완료까지 걸린 평균 시간(시간 단위)」 SQL 조각 — 날짜 계산 함수가 DB마다 달라 갈라준다.
+    시각을 TEXT('YYYY-MM-DD HH:MM')로 저장하므로, SQLite는 julianday(날짜→일수),
+    Postgres는 ::timestamp로 바꾼 뒤 EPOCH(초 차이)로 계산한다."""
+    if IS_PG:
+        return (f"ROUND((AVG(EXTRACT(EPOCH FROM ({done}::timestamp - {created}::timestamp))"
+                f" / 3600.0))::numeric, 1)")
+    return f"ROUND(AVG((julianday({done}) - julianday({created})) * 24), 1)"
+
+
 def save_photos(photos: list[UploadFile] | None) -> list[str]:
-    """올라온 사진들을 uploads\ 에 저장하고 파일명 목록을 돌려준다.
+    r"""올라온 사진들을 uploads\ 에 저장하고 파일명 목록을 돌려준다.
     왜 사진인가: "얼룩이 있대"(말)와 "여기 이 얼룩"(사진)의 차이 —
     어떤 시트의 어느 부분에 오점이 반복되는지를 직원·기사가 눈으로 알게 하려고 (2026-08-07 인각님 추가)."""
     names = []
@@ -80,7 +170,7 @@ def save_photos(photos: list[UploadFile] | None) -> list[str]:
     return names
 
 
-def attach_photos(con: sqlite3.Connection, action_id: int, photos: list[UploadFile] | None) -> None:
+def attach_photos(con, action_id: int, photos: list[UploadFile] | None) -> None:
     """저장된 사진들을 조치 한 건에 매단다 (photos 표에 한 장당 한 줄)."""
     for name in save_photos(photos):
         con.execute("INSERT INTO photos (action_id, filename) VALUES (?,?)", (action_id, name))
@@ -93,16 +183,19 @@ def notify(target: str, message: str) -> None:
 
 
 def init_db() -> None:
-    """표 4장을 만들고, 비어 있으면 시연용 예시 데이터를 넣는다."""
-    con = db()
-    con.executescript("""
+    """표를 만들고, 비어 있으면 시연용 예시 데이터를 넣는다. (SQLite·Postgres 공용)"""
+    # id 자동 번호 방식이 다르다: SQLite는 INTEGER PRIMARY KEY면 자동,
+    # Postgres는 IDENTITY 선언이 있어야 한다 (BY DEFAULT = 예시 데이터의 명시 id도 허용)
+    auto_id = ("INTEGER PRIMARY KEY" if not IS_PG
+               else "INTEGER PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY")
+    ddl = f"""
     CREATE TABLE IF NOT EXISTS factories (    -- 공장 — 거래처와 인력이 여기 소속된다
-        id   INTEGER PRIMARY KEY,
+        id   {auto_id},
         name TEXT NOT NULL,
         note TEXT DEFAULT ''                  -- 인력 구성 같은 요약
     );
     CREATE TABLE IF NOT EXISTS clients (      -- 거래처
-        id         INTEGER PRIMARY KEY,
+        id         {auto_id},
         factory_id INTEGER REFERENCES factories(id),   -- 어느 공장이 처리하나
         name       TEXT NOT NULL,
         biz_type   TEXT DEFAULT '',           -- 업태 (관광호텔·모텔·요양병원…)
@@ -111,7 +204,7 @@ def init_db() -> None:
         note       TEXT DEFAULT ''            -- 상시 특이사항 ("이불은 항상 개별 포장" 같은 것)
     );
     CREATE TABLE IF NOT EXISTS staff (        -- 담당자 (공장장·공장 인력·배송기사를 한 표에, role로 구분)
-        id         INTEGER PRIMARY KEY,
+        id         {auto_id},
         factory_id INTEGER REFERENCES factories(id),
         name       TEXT NOT NULL,
         role       TEXT NOT NULL CHECK (role IN ('owner','manager','factory','driver')),
@@ -120,7 +213,7 @@ def init_db() -> None:
         hired_at   TEXT DEFAULT ''            -- 입사 연월
     );
     CREATE TABLE IF NOT EXISTS items (        -- 품목 사전 (시트·베개피·수건…)
-        id   INTEGER PRIMARY KEY,
+        id   {auto_id},
         name TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS client_items ( -- 거래처별 취급 품목 — 호텔마다 구성이 다르다
@@ -130,7 +223,7 @@ def init_db() -> None:
         PRIMARY KEY (client_id, item_id)
     );
     CREATE TABLE IF NOT EXISTS complaints (   -- 컴플레인 티켓 (이 시스템의 중심 개체)
-        id          INTEGER PRIMARY KEY,
+        id          {auto_id},
         client_id   INTEGER NOT NULL REFERENCES clients(id),
         type        TEXT NOT NULL CHECK (type IN ('quality','delivery','etc')),
         severity    TEXT NOT NULL DEFAULT 'normal' CHECK (severity IN ('normal','urgent')),
@@ -143,7 +236,7 @@ def init_db() -> None:
         done_at     TEXT                      -- 완료 시각 (처리 시간 계산용)
     );
     CREATE TABLE IF NOT EXISTS actions (      -- 조치 일지 — append-only, 티켓의 타임라인
-        id           INTEGER PRIMARY KEY,
+        id           {auto_id},
         complaint_id INTEGER NOT NULL REFERENCES complaints(id),
         actor        TEXT NOT NULL,           -- 누가 (이름 글자 — v1은 로그인이 없으므로)
         kind         TEXT NOT NULL CHECK (kind IN ('register','instruct','ack','work','done','note')),
@@ -151,17 +244,26 @@ def init_db() -> None:
         created_at   TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS photos (       -- 첨부 사진 — 조치 하나에 여러 장(1:N)이라 표를 따로 둔다
-        id        INTEGER PRIMARY KEY,        -- (한 칸에 파일명 여러 개를 욱여넣으면 정규화 위반)
+        id        {auto_id},                  -- (한 칸에 파일명 여러 개를 욱여넣으면 정규화 위반)
         action_id INTEGER NOT NULL REFERENCES actions(id),
-        filename  TEXT NOT NULL               -- uploads\ 안의 파일명
+        filename  TEXT NOT NULL               -- uploads\\ 안의 파일명
     );
-    """)
-    # 이관: 예전 판은 actions.photo 한 칸에 사진 하나였다 → photos 표로 옮기고 칸을 없앤다
-    old_cols = [row[1] for row in con.execute("PRAGMA table_info(actions)")]
-    if "photo" in old_cols:
-        con.execute("""INSERT INTO photos (action_id, filename)
-                       SELECT id, photo FROM actions WHERE photo != ''""")
-        con.execute("ALTER TABLE actions DROP COLUMN photo")
+    """
+    con = db()
+    if IS_PG:
+        # psycopg는 여러 문장을 한 번에 못 보내므로 문장(;) 단위로 나눠 실행
+        for stmt in ddl.split(";"):
+            if stmt.strip():
+                con.execute(stmt)
+    else:
+        con.executescript(ddl)
+        # 이관: 예전 판은 actions.photo 한 칸에 사진 하나였다 → photos 표로 옮기고 칸을 없앤다
+        # (로컬 SQLite 파일에만 있을 수 있는 과거 흔적이라 SQLite에서만 확인)
+        old_cols = [row[1] for row in con.execute("PRAGMA table_info(actions)")]
+        if "photo" in old_cols:
+            con.execute("""INSERT INTO photos (action_id, filename)
+                           SELECT id, photo FROM actions WHERE photo != ''""")
+            con.execute("ALTER TABLE actions DROP COLUMN photo")
     # 비어 있을 때만 예시 데이터 (시연용 — 실제 도입 시 지우면 됨)
     # ⚠️ 업체 이름은 전부 가상이다. 실존 호텔·모텔의 「유형과 규모」만 본떴다 —
     #    실명에 지어낸 컴플레인을 붙여 공개 배포하면 그 업체에 대한 허위 기록이 되기 때문.
@@ -253,16 +355,15 @@ def init_db() -> None:
         def add_ticket(client, type_, sev, content, channel, assignee, created, acts, status, done=None):
             """예시 티켓 한 건 + 조치 일지 + 사진.
             acts = [(누가, 종류, 내용, 시각, [사진 파일명들])]. 사진은 make_demo_photos.py 가 만든 데모 이미지."""
-            cur = con.execute("""INSERT INTO complaints
+            tid = insert_id(con, """INSERT INTO complaints
                 (client_id, type, severity, content, channel, assignee_id, status, created_at, done_at)
                 VALUES (?,?,?,?,?,?,?,?,?)""",
                 (client, type_, sev, content, channel, sid(assignee), status, created, done))
-            tid = cur.lastrowid
             for actor, kind, text, at, photo_files in acts:
-                a = con.execute("""INSERT INTO actions (complaint_id, actor, kind, content, created_at)
-                                   VALUES (?,?,?,?,?)""", (tid, actor, kind, text, at))
+                aid = insert_id(con, """INSERT INTO actions (complaint_id, actor, kind, content, created_at)
+                                        VALUES (?,?,?,?,?)""", (tid, actor, kind, text, at))
                 for ph in photo_files:
-                    con.execute("INSERT INTO photos (action_id, filename) VALUES (?,?)", (a.lastrowid, ph))
+                    con.execute("INSERT INTO photos (action_id, filename) VALUES (?,?)", (aid, ph))
 
         # ── 예시 티켓 — 두 공장 모두, 여러 날짜에 걸쳐 (완료 이력이 있어야 평균 처리 시간이 산다) ──
         today = now()[:10]
@@ -509,7 +610,7 @@ def dashboard(request: Request, factory: int | None = None):
         "today": con.execute(f"SELECT COUNT(*) {scoped} AND c.created_at LIKE ?",
                              fargs + (now()[:10] + "%",)).fetchone()[0],
         # 평균 처리 시간(시간 단위): 완료 티켓의 (완료시각-접수시각) 평균
-        "avg_hours": con.execute(f"""SELECT ROUND(AVG((julianday(c.done_at)-julianday(c.created_at))*24),1)
+        "avg_hours": con.execute(f"""SELECT {sql_avg_hours('c.done_at', 'c.created_at')}
                                      {scoped} AND c.status='done'""", fargs).fetchone()[0],
     }
     by_type = con.execute(f"SELECT c.type, COUNT(*) n {scoped} GROUP BY c.type ORDER BY n DESC",
@@ -611,7 +712,7 @@ def client_detail(request: Request, client_id: int):
     # 업체별 지표: 누적 건수 · 유형별 · 평균 처리 시간 (반복되는 문제가 있는 거래처를 숫자로 보려고)
     stats = {
         "total": len(open_tickets) + len(done_tickets),
-        "avg_hours": con.execute("""SELECT ROUND(AVG((julianday(done_at)-julianday(created_at))*24),1)
+        "avg_hours": con.execute(f"""SELECT {sql_avg_hours('done_at', 'created_at')}
                                     FROM complaints WHERE client_id=? AND status='done'""",
                                  (client_id,)).fetchone()[0],
     }
@@ -724,14 +825,13 @@ def new_submit(request: Request, client_id: int = Form(...), type: str = Form(..
     if user is None:
         return RedirectResponse("/login", status_code=303)
     con = db()
-    cur = con.execute("""INSERT INTO complaints
+    ticket_id = insert_id(con, """INSERT INTO complaints
         (client_id, type, severity, content, channel, assignee_id, status, created_at)
         VALUES (?,?,?,?,?,?, 'new', ?)""",
         (client_id, type, severity, content, channel, assignee_id, now()))
-    ticket_id = cur.lastrowid
-    reg = con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
-                      (ticket_id, user["name"], "register", f"{channel} 접수", now()))
-    attach_photos(con, reg.lastrowid, photos)
+    reg_id = insert_id(con, "INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
+                       (ticket_id, user["name"], "register", f"{channel} 접수", now()))
+    attach_photos(con, reg_id, photos)
     if instruction.strip():
         con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
                     (ticket_id, user["name"], "instruct", instruction.strip(), now()))
@@ -783,9 +883,9 @@ def add_action(request: Request, ticket_id: int, kind: str = Form(...),
     if user is None:
         return RedirectResponse("/login", status_code=303)
     con = db()
-    cur = con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
-                      (ticket_id, user["name"], kind, content.strip(), now()))
-    attach_photos(con, cur.lastrowid, photos)
+    aid = insert_id(con, "INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
+                    (ticket_id, user["name"], kind, content.strip(), now()))
+    attach_photos(con, aid, photos)
     if kind in KIND_TO_STATUS:
         new_status = KIND_TO_STATUS[kind]
         con.execute("UPDATE complaints SET status=? WHERE id=?", (new_status, ticket_id))
