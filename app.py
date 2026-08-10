@@ -356,12 +356,19 @@ def init_db() -> None:
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS ask_log (      -- 세탁 상담 챗 질문·답 기록 — 어떤 질문이 오는지가 다음 개선의 나침반
+    CREATE TABLE IF NOT EXISTS chats (            -- 상담 대화방 — 한 사람이 주제별로 여러 개
         id         {auto_id},
-        asked_by   TEXT NOT NULL,             -- 질문한 사람 (로그인 이름)
-        question   TEXT NOT NULL,
-        answer     TEXT DEFAULT '',           -- 답 또는 실패 사유
-        ok         INTEGER NOT NULL DEFAULT 0,  -- 1=답 성공
+        staff_id   INTEGER NOT NULL REFERENCES staff(id),   -- 방 주인 (로그인 사용자)
+        title      TEXT NOT NULL,                 -- 방 제목 = 첫 질문 앞 30자
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS chat_msgs (        -- 대화 내용 — 말풍선 하나가 한 줄 (수정 없음, 쌓기만)
+        id         {auto_id},
+        chat_id    INTEGER NOT NULL REFERENCES chats(id),
+        role       TEXT NOT NULL CHECK (role IN ('user','bot')),
+        content    TEXT NOT NULL,
+        sources    TEXT DEFAULT '',               -- 근거 목록 JSON 문자열 (bot 답에만)
+        ok         INTEGER NOT NULL DEFAULT 1,    -- 0 = 오류·연결 실패 안내였음
         created_at TEXT NOT NULL
     );
     """
@@ -376,6 +383,10 @@ def init_db() -> None:
         con.execute("ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_kind_check")
         con.execute("ALTER TABLE actions ADD CONSTRAINT actions_kind_check CHECK "
                     "(kind IN ('register','instruct','ack','work','done','note','move'))")
+        # 세탁 상담 챗 구조 변경(질문·답 한 줄 ask_log → 대화방 여러 개 chats/chat_msgs):
+        # 시험 기록 몇 줄뿐이라 옮기지 않고 정리한다. SQLite 쪽은 로컬 파일이라 매번 새로
+        # 만들어지므로(위 CREATE IF NOT EXISTS로 이미 새 표만 생김) 별도 조치가 필요 없다.
+        con.execute("DROP TABLE IF EXISTS ask_log")
     else:
         con.executescript(ddl)
         # 이관: 예전 판은 actions.photo 한 칸에 사진 하나였다 → photos 표로 옮기고 칸을 없앤다
@@ -1099,21 +1110,58 @@ def my_tickets(request: Request, staff_id: int):
 
 @app.get("/ask")
 def ask_page(request: Request):
-    """세탁 상담 챗 — 노트북의 상담 모델에게 물어보는 화면 (HANDOFF-ask-chat.md).
-    단발 질문-답 구조(대화 기억 없음 — 멀티턴은 사용 로그를 보고 나중에 결정)."""
+    """세탁 상담 챗 — 상담 목록(방 여러 개, 카톡 채팅 목록 느낌) 화면.
+    한 사람이 주제별로 방을 나눠 물어볼 수 있게 되면서(HANDOFF-ask-chat.md 확장),
+    /ask는 방을 고르는 입구가 되고 실제 대화는 /ask/chat이 맡는다."""
     user = require_user(request)
     if user is None:
         return RedirectResponse("/login", status_code=303)
     if not BRAIN_URL:                        # 메뉴가 숨겨져 있어도 주소로 직접 오면 안내
         return HTMLResponse("세탁 상담은 준비 중입니다. <p><a href='/'>← 대시보드로</a></p>")
-    return templates.TemplateResponse(request, "ask.html", {})
+    con = db()
+    # 내 방 목록 — 방마다 쌓인 메시지 개수(n)를 같이 세어 카드에 보여준다.
+    # 최신 방이 위로 오도록 id 역순(가장 최근에 만든 방 = 가장 큰 id).
+    chats = con.execute("""SELECT c.id, c.title, c.created_at, COUNT(m.id) AS n
+        FROM chats c LEFT JOIN chat_msgs m ON m.chat_id=c.id
+        WHERE c.staff_id=? GROUP BY c.id, c.title, c.created_at
+        ORDER BY c.id DESC""", (user["id"],)).fetchall()
+    con.close()
+    return templates.TemplateResponse(request, "ask_list.html", {"chats": chats})
+
+
+@app.get("/ask/chat")
+def ask_chat(request: Request, id: int = 0):
+    """세탁 상담 챗 — 실제 대화 화면. id=0이면 아직 DB에 없는 새 상담(빈 방 —
+    첫 질문을 보내는 순간에야 /api/ask가 방을 만든다). id가 있으면 그 방의 저장된
+    대화를 시간순으로 불러와 서버에서 그대로 그린다(새로고침해도 대화가 안 사라진다)."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    if not BRAIN_URL:                        # 메뉴가 숨겨져 있어도 주소로 직접 오면 안내
+        return HTMLResponse("세탁 상담은 준비 중입니다. <p><a href='/'>← 대시보드로</a></p>")
+    msgs: list[dict] = []
+    if id:
+        con = db()
+        chat = con.execute("SELECT * FROM chats WHERE id=?", (id,)).fetchone()
+        if chat is None or chat["staff_id"] != user["id"]:   # 없는 방이거나 남의 방 — 목록으로 돌려보낸다
+            con.close()
+            return RedirectResponse("/ask", status_code=303)
+        rows = con.execute("SELECT * FROM chat_msgs WHERE chat_id=? ORDER BY id", (id,)).fetchall()
+        con.close()
+        # sources 칸은 DB에 JSON 문자열로 눌러 담겨 있으므로 화면에 넘기기 전에 풀어준다.
+        # (빈 문자열 = 근거 없음 → 빈 목록. bot 메시지가 아니면 애초에 이 칸이 비어 있다)
+        for r in rows:
+            msgs.append({"role": r["role"], "content": r["content"], "ok": r["ok"],
+                        "sources": json.loads(r["sources"]) if r["sources"] else []})
+    return templates.TemplateResponse(request, "ask.html", {"chat_id": id, "msgs": msgs})
 
 
 @app.post("/api/ask")
-def ask_proxy(request: Request, question: str = Form(...)):
-    """상담 질문 중계 — 로그인 확인 → 길이 검증 → 노트북(BRAIN_URL)으로 전달 → 답을 그대로 반환.
-    답 속의 「※ 현장 검증 전」 딱지와 「⛔」 경고는 안전·정직성 장치라 절대 가공하지 않는다(HANDOFF 계약).
-    질문·답은 ask_log에 남긴다 — 어떤 질문이 들어오는지가 다음 개선의 나침반."""
+def ask_proxy(request: Request, question: str = Form(...), chat_id: int = Form(0)):
+    """상담 질문 중계 — 로그인 확인 → 길이 검증 → 방 확보(0이면 새로 만들고, 아니면 내 방인지
+    확인) → 질문을 chat_msgs에 저장 → 노트북(BRAIN_URL)으로 전달 → 답을 그대로 반환하며
+    chat_msgs에도 저장한다. 방 하나에 「질문 한 줄 + 답 한 줄」이 시간순으로 계속 쌓인다.
+    답 속의 「※ 현장 검증 전」 딱지와 「⛔」 경고는 안전·정직성 장치라 절대 가공하지 않는다(HANDOFF 계약)."""
     user = require_user(request)
     if user is None:
         return JSONResponse({"ok": False, "error": "로그인이 필요합니다"}, status_code=401)
@@ -1122,6 +1170,21 @@ def ask_proxy(request: Request, question: str = Form(...)):
         return JSONResponse({"ok": False, "error": "질문은 2~500자로 적어주세요"}, status_code=400)
     if not BRAIN_URL:
         return JSONResponse({"ok": False, "error": "세탁 상담이 아직 준비 중입니다"}, status_code=503)
+    con = db()
+    if chat_id == 0:
+        # 새 방 — 제목은 사람이 따로 안 정해도 되게 첫 질문 앞 30자를 그대로 쓴다
+        chat_id = insert_id(con, "INSERT INTO chats (staff_id, title, created_at) VALUES (?,?,?)",
+                            (user["id"], q[:30], now()))
+    else:
+        # 기존 방 — 내 방이 맞는지 먼저 확인한다 (남의 방 번호를 실어 보내는 요청을 막는다)
+        chat = con.execute("SELECT staff_id FROM chats WHERE id=?", (chat_id,)).fetchone()
+        if chat is None or chat["staff_id"] != user["id"]:
+            con.close()
+            return JSONResponse({"ok": False, "error": "이 상담방에 접근할 수 없습니다"}, status_code=403)
+    # 질문을 먼저 남긴다 — 두뇌 호출이 실패해도 "무엇을 물었는지"는 방에 남아야 한다
+    con.execute("INSERT INTO chat_msgs (chat_id, role, content, created_at) VALUES (?,?,?,?)",
+                (chat_id, "user", q, now()))
+    con.commit()
     try:
         req = urllib.request.Request(BRAIN_URL + "/api/ask",
                                      data=json.dumps({"question": q}).encode("utf-8"))
@@ -1136,11 +1199,15 @@ def ask_proxy(request: Request, question: str = Form(...)):
             body = {"ok": False, "error": f"답변기 응답 오류({e.code}) — 잠시 후 다시 시도해 주세요."}
     except Exception:                        # 노트북 꺼짐·터널 끊김 — 사이트는 멀쩡해야 한다
         body = {"ok": False, "error": "지금은 상담원이 쉬고 있습니다. 잠시 후 다시 시도해 주세요."}
-    con = db()
-    con.execute("INSERT INTO ask_log (asked_by, question, answer, ok, created_at) VALUES (?,?,?,?,?)",
-                (user["name"], q, str(body.get("answer") or body.get("error") or "")[:2000],
+    # 상담원(봇) 답을 저장 — sources는 목록이라 칸 하나에 못 담으니 JSON 문자열로 눌러 담는다
+    # (근거 목록은 항상 그 답 하나에만 딸려 함께 읽히므로 표를 더 쪼개지 않아도 된다)
+    con.execute("""INSERT INTO chat_msgs (chat_id, role, content, sources, ok, created_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (chat_id, "bot", str(body.get("answer") or body.get("error") or "")[:2000],
+                 json.dumps(body.get("sources") or [], ensure_ascii=False),
                  1 if body.get("ok") else 0, now()))
     con.commit(); con.close()
+    body["chat_id"] = chat_id   # 새로 만든 방이었다면 화면이 이 번호로 주소를 바꿔 달게 알려준다
     return JSONResponse(body)
 
 

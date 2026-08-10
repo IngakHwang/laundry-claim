@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% block title %}세탁 상담 — 세탁 클레임{% endblock %}
+
+{% block body %}
+{# 세탁 상담 목록 — 카톡 채팅 목록처럼, 한 사람이 주제별로 여러 방을 두고 물어본다.
+   방 자체(빈 대화)는 여기서 안 만든다 — /ask/chat(id 없이)로 들어가 첫 질문을 보내는
+   순간 /api/ask가 비로소 chats에 한 줄을 넣는다(빈 방이 목록에 쌓이는 것을 막는다). #}
+<h1>세탁 상담</h1>
+<p class="meta">세탁 공정과 얼룩 처리 전문 상담원 — 주제별로 방을 나눠 물어보세요</p>
+
+{# 새 상담 시작 — id 없이 /ask/chat으로 가면 빈 방(아직 DB에 없는 상태)이 열린다 #}
+<a class="card" href="/ask/chat" style="text-align:center; font-weight:700; color:var(--brand-deep)">+ 새 상담 시작</a>
+
+{% for c in chats %}
+{# 방 카드 — 제목(첫 질문 앞 30자)과 메시지 개수·만든 시각을 함께 보여준다 #}
+<a class="card" href="/ask/chat?id={{ c.id }}">
+  <b>{{ c.title }}</b>
+  <div class="meta">메시지 {{ c.n }}개 · {{ c.created_at }}</div>
+</a>
+{% else %}
+<p class="meta">아직 상담 내역이 없습니다 — 첫 상담을 시작해 보세요.</p>
+{% endfor %}
+{% endblock %}
