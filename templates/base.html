@@ -1,3 +1,4 @@
+{% import "_icons.html" as ic %}
 <!doctype html>
 <html lang="ko">
 <head>
@@ -163,6 +164,19 @@ button.mv{display:block; width:calc(100% - 20px); margin:2px 10px 10px; min-heig
 .mv-working{color:var(--st-working-tx); border:1.5px solid var(--st-working);}
 .mv-done{color:var(--st-done-tx); border:1.5px solid var(--st-done);}
 button.mv:hover{background:var(--bg);}
+/* 인라인 SVG 아이콘(_icons.html) — 글자색을 따라가고, 글줄 기준선에 맞춘다 */
+.ic{vertical-align:-3px; flex:none;}
+.brand .ic{color:var(--brand); vertical-align:-4px;}
+/* 로그인 추천 역할 카드 — 면접관의 첫 화면이 "어떻게 둘러보나" 안내판 역할을 한다(재질 교체 6단계) */
+button.role-card{display:block; width:100%; text-align:left; background:var(--surface); color:var(--text);
+  border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin:0 0 10px;
+  font-size:1rem; font-weight:400; box-shadow:var(--shadow);}
+button.role-card:hover{border-color:var(--brand); box-shadow:var(--shadow-hover);}
+.role-card b{font-weight:700;}
+.role-card .desc{display:block; color:var(--sub); font-size:.85rem; margin-top:2px;}
+/* 중립 안내 박스 — 노란 박스(.instr)는 "행동을 요구하는 정보(지시·상시 특이사항)" 전용으로 남긴다 */
+.notebox{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--brand);
+  border-radius:8px; padding:8px 12px; margin:8px 0 14px; font-size:.92rem; color:var(--sub);}
 /* 본문 접이 섹션 — 기본은 접혀 있고, 제목을 누르면 펴진다 */
 details.fold{margin-top:22px;}
 details.fold summary{cursor:pointer; list-style:none; font-size:1.05rem; font-weight:700;}
@@ -178,34 +192,34 @@ details.fold > *:not(summary){margin-top:10px;}
   {% set p = request.url.path %}
   {# 현장 인력(공장·기사)의 홈은 「내 클레임」 — 관리 지표(대시보드)가 아니다 (점검 지적: 역할별 홈 위계) #}
   {% set field = user and user.role in ('factory', 'driver') %}
-  <a class="brand" href="{{ '/me' if field else '/' }}" title="{{ '내 클레임으로' if field else '대시보드로' }}">🧺 세탁 클레임</a>
+  <a class="brand" href="{{ '/me' if field else '/' }}" title="{{ '내 클레임으로' if field else '대시보드로' }}">{{ ic.i('wash', 19) }} 세탁 클레임</a>
   {% if user %}
-  <a class="primary" href="/new">＋ 클레임 접수</a>
+  <a class="primary" href="/new">{{ ic.i('plus', 15) }} 클레임 접수</a>
   {% if field %}
   {# 기사·공장 인력에겐 최우선 목적지를 맨 앞에 — 폰에서 메뉴가 접혀도 첫 줄에 보이게 #}
-  <a class="{{ 'on' if p.startswith('/me') }}" href="/me">👤 내 클레임</a>
+  <a class="{{ 'on' if p.startswith('/me') }}" href="/me">{{ ic.i('user') }} 내 클레임</a>
   {% endif %}
-  <a class="{{ 'on' if p == '/' }}" href="/">📊 대시보드</a>
+  <a class="{{ 'on' if p == '/' }}" href="/">{{ ic.i('chart') }} 대시보드</a>
   <details open><summary>공장</summary>
     {% if user.role == 'owner' %}
-    <a class="{{ 'on' if p == '/f/1' }}" href="/f/1">🏭 제1공장 (창동)</a>
-    <a class="{{ 'on' if p == '/f/2' }}" href="/f/2">🏭 제2공장 (의정부)</a>
+    <a class="{{ 'on' if p == '/f/1' }}" href="/f/1">{{ ic.i('factory') }} 제1공장 (창동)</a>
+    <a class="{{ 'on' if p == '/f/2' }}" href="/f/2">{{ ic.i('factory') }} 제2공장 (의정부)</a>
     {% else %}
-    <a class="{{ 'on' if p.startswith('/f/') }}" href="/f/{{ user.factory_id }}">🏭 내 공장</a>
+    <a class="{{ 'on' if p.startswith('/f/') }}" href="/f/{{ user.factory_id }}">{{ ic.i('factory') }} 내 공장</a>
     {% endif %}
   </details>
   <details open><summary>모아보기</summary>
-    <a class="{{ 'on' if p == '/clients' }}" href="/clients">🏢 거래처 현황</a>
+    <a class="{{ 'on' if p == '/clients' }}" href="/clients">{{ ic.i('building') }} 거래처 현황</a>
     {% if not field %}
     {# 사장에게 이 화면은 "내" 클레임이 아니라 담당자를 골라 보는 화면 — 이름을 그대로 부른다 (점검 지적) #}
-    <a class="{{ 'on' if p.startswith('/me') }}" href="/me">👤 {{ '담당자별 클레임' if user.role == 'owner' else '내 클레임' }}</a>
+    <a class="{{ 'on' if p.startswith('/me') }}" href="/me">{{ ic.i('user') }} {{ '담당자별 클레임' if user.role == 'owner' else '내 클레임' }}</a>
     {% endif %}
   </details>
   <details open><summary>최근 업데이트</summary>
     {% for t in recent_tickets(user) %}
     <a class="recent" href="/c/{{ t.id }}"><span class="dot {{ 'red' if t.severity == 'urgent' }}"></span>#{{ t.id }} {{ t.client_name }}</a>
     {% else %}
-    <a class="recent">미완료 없음 🎉</a>
+    <a class="recent">미완료 없음</a>
     {% endfor %}
   </details>
   {% endif %}
@@ -214,7 +228,7 @@ details.fold > *:not(summary){margin-top:10px;}
 <div class="topbar">
   {% if user %}
   <form class="search" action="/search" method="get">
-    <input type="search" name="q" placeholder="🔍 클레임 검색 — 내용·거래처 이름" value="{{ request.query_params.get('q', '') }}">
+    <input type="search" name="q" placeholder="클레임 검색 — 내용·거래처 이름" value="{{ request.query_params.get('q', '') }}">
   </form>
   <span class="avatar" title="{{ user.name }}">{{ user.name[:2] }}</span>
   <a class="meta" href="/logout">로그아웃</a>

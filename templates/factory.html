@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% import "_icons.html" as ic %}
 {% block title %}{{ f.name }} — 세탁 클레임{% endblock %}
 {% block body %}
 <h1>{{ f.name }}</h1>
 <p class="meta">{{ f.note }} · 하루 물량 합계 약 <b>{{ "{:,}".format(total_kg) }}kg</b> · <a href="/?factory={{ f.id }}">이 공장 대시보드 →</a></p>
 
-<h2>현재 이슈 (미완료 {{ open_tickets|length }}건)</h2>
+<h2>현재 클레임 (미완료 {{ open_tickets|length }}건)</h2>
 {% for t in open_tickets %}
 <a class="card {{ 'urgent' if t.severity == 'urgent' }}" href="/c/{{ t.id }}">
   {% if t.severity == 'urgent' %}<span class="badge b-urgent">긴급</span>{% endif %}
@@ -14,7 +15,7 @@
   <span class="meta">담당 {{ t.assignee_name or "미배정" }} · {{ t.created_at }}</span>
 </a>
 {% else %}
-<p class="meta">미완료 이슈가 없습니다. 🎉</p>
+<p class="meta">미완료 클레임이 없습니다.</p>
 {% endfor %}
 
 <h2>거래처 ({{ client_rows|length }}곳)</h2>
@@ -26,7 +27,7 @@
     품목:
     {% for it in row.goods %}{{ it.name }} {{ "{:,}".format(it.daily_qty) }}장{{ " · " if not loop.last }}{% endfor %}
   </div>
-  {% if row.c.note %}<div class="instr">📌 상시 특이사항: {{ row.c.note }}</div>{% endif %}
+  {% if row.c.note %}<div class="instr">{{ ic.i('pin', 14) }} 상시 특이사항: {{ row.c.note }}</div>{% endif %}
 </a>
 {% endfor %}
 

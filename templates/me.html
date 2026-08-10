@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icons.html" as ic %}
 {% block title %}{{ me.name }}의 클레임 — 세탁 클레임{% endblock %}
 {% block body %}
 <h1>{{ me.name }}님의 클레임 <span class="badge b-type">{{ ROLE_LABEL[me.role] }}</span></h1>
@@ -13,7 +14,7 @@
 
   {% for i in instructions[t.id] %}
   <div class="instr">
-    {% if i.kind == 'instruct' %}📌 지시: {{ i.content }}{% else %}📷 접수 사진{% endif %}
+    {% if i.kind == 'instruct' %}{{ ic.i('pin', 14) }} 지시: {{ i.content }}{% else %}{{ ic.i('camera', 14) }} 접수 사진{% endif %}
     {% for p in i.photos %}
     <a href="/uploads/{{ p }}" target="_blank"><img class="photo" src="/uploads/{{ p }}" alt="첨부 사진"></a>
     {% endfor %}
@@ -27,7 +28,7 @@
       <input type="hidden" name="kind" value="ack">
       <input type="hidden" name="content" value="지시 확인">
       {# 배송 중 한 손으로 누르는 핵심 버튼 — 작게 만들지 않는다(전폭 기본 버튼) (점검 지적) #}
-      <button type="submit">✅ 확인했습니다</button>
+      <button type="submit">{{ ic.i('check', 15) }} 확인했습니다</button>
     </form>
     {% else %}
     <form method="post" action="/c/{{ t.id }}/action" enctype="multipart/form-data">
@@ -39,14 +40,14 @@
       {# 「완료」를 드롭다운에 숨기지 않는다 — 기본값(처리 보고)에 묻혀 티켓이 영원히
          처리중에 머물던 문제(점검 지적). 누른 버튼이 자기 kind 값을 제출한다. #}
       <button type="submit" name="kind" value="work">처리 보고 기록 (계속 진행)</button>
-      <button class="alt-done" type="submit" name="kind" value="done">✅ 완료 처리</button>
+      <button class="alt-done" type="submit" name="kind" value="done">{{ ic.i('check', 15) }} 완료 처리</button>
     </form>
     {% endif %}
   {% endif %}
   <a class="meta" href="/c/{{ t.id }}">전체 이력 보기 →</a>
 </div>
 {% else %}
-<p class="meta">배정된 클레임이 없습니다. 🎉</p>
+<p class="meta">배정된 클레임이 없습니다.</p>
 {% endfor %}
 
 <details class="fold">

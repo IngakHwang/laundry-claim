@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% import "_icons.html" as ic %}
 {% block title %}{{ c.name }} — 세탁 클레임{% endblock %}
 {% block body %}
 <h1>{{ c.name }} <span class="badge b-type">{{ c.biz_type }}</span></h1>
 <p class="meta">{{ c.factory_name }} 담당 · {% if c.rooms %}객실(침상) {{ c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(c.daily_kg) }}kg
   · 취급 품목: {% for it in goods %}{{ it.name }} {{ "{:,}".format(it.daily_qty) }}장{{ " · " if not loop.last }}{% endfor %}</p>
-{% if c.note %}<div class="instr">📌 상시 특이사항: {{ c.note }}</div>{% endif %}
+{% if c.note %}<div class="instr">{{ ic.i('pin', 14) }} 상시 특이사항: {{ c.note }}</div>{% endif %}
 
 <div class="stats">
   <a class="stat" href="#board-top"><b>{{ stats.total }}</b><span>누적 클레임 ↓</span></a>
@@ -29,7 +30,7 @@
   <span class="meta">담당 {{ t.assignee_name or "미배정" }} · {{ t.created_at }} {{ t.channel }} 접수</span>
 </a>
 {% else %}
-<p class="meta">진행 중인 클레임이 없습니다. 🎉</p>
+<p class="meta">진행 중인 클레임이 없습니다.</p>
 {% endfor %}
 </details>
 

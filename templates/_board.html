@@ -1,3 +1,4 @@
+{% import "_icons.html" as ic %}
 {# 칸반 현황판 부품 — 대시보드 상단과 /board 화면이 같이 쓴다. 필요한 재료: cols, days_old, photo_n #}
 <div class="board">
   {% for status, tickets in cols.items() %}
@@ -17,9 +18,9 @@
         <div class="body">{{ t.content }}</div>
         <div class="meta">
           <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
-          🏭 {{ t.factory_name.split(' ')[0] if t.factory_name else "?" }}
-          · 👤 <b>{{ t.assignee_name or "미배정" }}</b>
-          {% if photo_n.get(t.id) %} · 📷{{ photo_n[t.id] }}{% endif %}
+          {{ ic.i('factory', 13) }} {{ t.factory_name.split(' ')[0] if t.factory_name else "?" }}
+          · {{ ic.i('user', 13) }} <b>{{ t.assignee_name or "미배정" }}</b>
+          {% if photo_n.get(t.id) %} · {{ ic.i('camera', 13) }} {{ photo_n[t.id] }}{% endif %}
           {% if status != 'done' %} · {{ days_old[t.id] }}일째{% endif %}
         </div>
       </a>

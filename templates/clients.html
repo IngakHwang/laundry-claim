@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icons.html" as ic %}
 {% block title %}거래처 현황 — 세탁 클레임{% endblock %}
 {% block body %}
 <h1>거래처 현황</h1>
@@ -11,9 +12,9 @@
 <a class="card" href="/client/{{ c.id }}">
   <b>{{ c.name }}</b> <span class="badge b-type">{{ c.biz_type }}</span>
   <span class="meta">
-    {% if c.rooms %}객실(침상) {{ c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(c.daily_kg) }}kg — 이슈 이력 보기 →
+    {% if c.rooms %}객실(침상) {{ c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(c.daily_kg) }}kg — 클레임 이력 보기 →
   </span>
-  {% if c.note %}<div class="instr">📌 상시 특이사항: {{ c.note }}</div>{% endif %}
+  {% if c.note %}<div class="instr">{{ ic.i('pin', 14) }} 상시 특이사항: {{ c.note }}</div>{% endif %}
 </a>
 {% endfor %}
 {% endfor %}

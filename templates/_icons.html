@@ -1,0 +1,29 @@
+{# 단색 인라인 SVG 아이콘 모음 (lucide 계열, 재질 교체 4단계) —
+   컬러 이모지(🏭👤📷…)는 OS마다 모양이 다르고 원색이라 팔레트를 깨던 것을(점검 지적)
+   현재 글자색(currentColor)을 따라가는 선 아이콘으로 교체한다. 외부 라이브러리 없음.
+   쓰는 법: 템플릿 상단에 {% import "_icons.html" as ic %} → 본문에서 {{ ic.i('user') }} 또는 {{ ic.i('user', 14) }} #}
+{% macro i(name, size=16) -%}
+<svg class="ic" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == 'wash' -%}{# 세탁기 — 브랜드 #}
+<rect x="3" y="2" width="18" height="20" rx="2"/><circle cx="12" cy="13" r="5"/><path d="M3 6h3M17 6h.01"/>
+{%- elif name == 'chart' -%}{# 막대그래프 — 대시보드 #}
+<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M8 17v-5"/><path d="M13 17V8"/><path d="M18 17v-8"/>
+{%- elif name == 'factory' -%}{# 공장 #}
+<path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M17 18h1M12 18h1M7 18h1"/>
+{%- elif name == 'building' -%}{# 건물 — 거래처 #}
+<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/>
+{%- elif name == 'user' -%}{# 사람 — 담당자 #}
+<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+{%- elif name == 'search' -%}{# 돋보기 #}
+<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+{%- elif name == 'camera' -%}{# 카메라 — 사진 #}
+<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>
+{%- elif name == 'pin' -%}{# 압정 — 지시·상시 특이사항 #}
+<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z"/>
+{%- elif name == 'check' -%}{# 체크 — 확인·완료 #}
+<path d="M20 6 9 17l-5-5"/>
+{%- elif name == 'plus' -%}{# 더하기 — 접수 #}
+<path d="M5 12h14M12 5v14"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}
