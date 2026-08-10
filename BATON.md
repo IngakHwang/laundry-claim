@@ -13,7 +13,7 @@
 - 디자인 참고 기준: 루트의 `컴포넌트 예시.PNG`(협업툴 플로우 화면 — 인각님이 둔 참고 이미지)
 
 ## ❓ 인각님이 답할 것
-- **Neon 가입 + 연결 문자열 전달** (2026-08-10) — ①neon.tech에 GitHub 계정으로 가입(카드 없음) ②프로젝트 만들 때 Region을 Render 서비스와 같은 곳으로(Render 대시보드에서 확인) ③Connection string(postgresql://…)을 세션에 붙여넣기 → Claude가 로컬 검증 후 Render 환경변수 등록 안내
+- **Render에 DATABASE_URL 환경변수 등록** (2026-08-10, 마지막 한 걸음) — dashboard.render.com → laundry-claim 서비스 → Environment 탭 → Add Environment Variable → Key: `DATABASE_URL`, Value: Neon 연결 문자열(세션 기록·Neon 대시보드에 있음) → Save. 저장하면 자동 재배포되고, 그 뒤부터 데이터가 재시작을 견딘다. (Neon 실접속 검증은 3단계 전부 통과 완료)
 
 ## ⚠️ 주의
 - **무료 서버는 15분 쉬면 잠듦** — 면접·시연 전에 미리 한 번 열어 깨워둘 것 (깨는 데 1분)
