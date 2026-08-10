@@ -23,7 +23,7 @@ app.py — 세탁공장 컴플레인 티켓 시스템 v1
 import os
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -52,9 +52,14 @@ KIND_LABEL = {"register": "접수", "instruct": "지시", "ack": "확인",
 ROLE_LABEL = {"owner": "본사", "manager": "공장장", "factory": "공장", "driver": "배송기사"}
 
 
+# 한국 시간 — 배포 서버(Render)는 UTC라서 그냥 now()를 쓰면 9시간 이르게 찍힌다(배포 검증에서 발견).
+# KST는 서머타임이 없어 고정 +9가 항상 맞다 — 시간대 데이터베이스 없이도 안전.
+KST = timezone(timedelta(hours=9))
+
+
 def now() -> str:
-    """지금 시각을 'YYYY-MM-DD HH:MM' 글자로. DB에 시각은 전부 이 형식으로 넣는다."""
-    return datetime.now().strftime("%Y-%m-%d %H:%M")
+    """지금 시각(한국 기준)을 'YYYY-MM-DD HH:MM' 글자로. DB에 시각은 전부 이 형식으로 넣는다."""
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M")
 
 
 # ── DB 백엔드 선택 (v2: 무료 Postgres 이관, 2026-08-10) ──────────────────
@@ -164,7 +169,7 @@ def save_photos(photos: list[UploadFile] | None) -> list[str]:
         ext = Path(photo.filename).suffix.lower()
         if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
             continue                   # 사진 파일만 받는다 (그 외는 조용히 무시 — v1)
-        name = datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6] + ext
+        name = datetime.now(KST).strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6] + ext
         (UPLOAD_DIR / name).write_bytes(photo.file.read())
         names.append(name)
     return names
@@ -646,7 +651,7 @@ def board_data(fid: int | None, client_id: int | None = None):
     con.close()
     # 상태별로 묶고, 완료 열은 최근 8건만 (완료가 쌓이면 열이 무한히 길어지므로)
     cols = {s: [] for s in ("new", "acked", "working", "done")}
-    today = datetime.now()
+    today = datetime.now(KST).replace(tzinfo=None)   # created_at(한국 시간 문자열)과 같은 기준으로 경과일 계산
     days_old = {}
     for t in rows:
         cols[t["status"]].append(t)
