@@ -19,7 +19,7 @@
 ] %}
 <form method="post" action="/login">
   <input type="hidden" name="staff_id" value="{{ sid }}">
-  <button class="role-card" type="submit"><b>{{ name }}</b> <span class="badge b-type">{{ role }}</span>
+  <button class="role-card" type="submit"><span class="go">들어가기 →</span><b>{{ name }}</b> <span class="badge b-type">{{ role }}</span>
     <span class="desc">{{ desc }}</span></button>
 </form>
 {% endfor %}

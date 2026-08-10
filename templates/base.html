@@ -34,8 +34,8 @@
   --urgent:#DC2626;            /* 긴급 전용 빨강 — 다른 뜻으로 쓰지 않는다 */
   /* 상태색 4단계: 확인 대기(주황)→확인됨(노랑)→처리중(파랑)→완료(초록).
      *-bg 배지 바탕, *-tx 배지 글자. 확인 대기가 빨강이던 것을 주황으로 내림(긴급과 축 분리) */
-  --st-new:#D9730D;     --st-new-bg:#FBEADB;     --st-new-tx:#9C4A08;
-  --st-acked:#DFA700;   --st-acked-bg:#FDF2CE;   --st-acked-tx:#8A6100;
+  --st-new:#D9730D;     --st-new-bg:#FBE3CC;     --st-new-tx:#9C4A08;
+  --st-acked:#B08900;   --st-acked-bg:#FDF3C4;   --st-acked-tx:#8A6100;   /* 확인됨은 노랑을 어둡게(테두리 대비)·배지 바탕은 확인 대기와 색감 분리 */
   --st-working:#2563EB; --st-working-bg:#E8F0FE; --st-working-tx:#1D4FBE;
   --st-done:#16803C;    --st-done-bg:#E6F4EA;    --st-done-tx:#157035;
   --brand-deep:#4F41C8;        /* 브랜드 진한 단계 — 옅은 배경 위 글자용(보라 원색은 대비 4.4:1로 경계 미달) */
@@ -47,7 +47,8 @@
    .meta·.card 등 자기 색을 가진 컴포넌트는 클래스 규칙이 이겨서 그대로다. */
 a{color:var(--brand-deep);}
 *{box-sizing:border-box}
-body{font-family:"Pretendard Variable",Pretendard,"Segoe UI","Malgun Gothic",sans-serif; margin:0; background:var(--bg); color:var(--text);}
+body{font-family:"Pretendard Variable",Pretendard,"Segoe UI","Malgun Gothic",sans-serif; margin:0; background:var(--bg); color:var(--text);
+  word-break:keep-all; overflow-wrap:break-word;}   /* 한국어 단어 중간 꺾임 방지("그랜드컨/벤션") + 초장문은 안전하게 강제 줄바꿈 */
 /* flow식 골격 (인각님 제공 캡처 기준): 흰 사이드바(주 버튼 + 접히는 섹션) + 상단 바(검색·아바타).
    아이콘 레일은 제품이 하나뿐이라 뺐다. 폰(860px 이하)에서는 사이드바가 위쪽 막대로 접힌다. */
 .shell{display:flex; min-height:100vh;}
@@ -81,16 +82,24 @@ main{max-width:820px; margin:0 auto; padding:20px 16px;}
 @media (max-width:860px){
   .shell{display:block;}
   /* 메뉴는 줄을 바꿔서라도(flex-wrap) 전부 보인다 — 가로 스크롤로 잘리면
-     뒤에 있는 「내 클레임」은 존재 자체를 모른다 (점검 최다 지적: 리뷰어 4명) */
-  aside.side{width:auto; display:flex; flex-wrap:wrap; padding:8px; gap:2px; align-items:center; border-right:0; border-bottom:1px solid var(--border);}
-  .side a{white-space:nowrap; margin-bottom:0; padding:7px 10px;}
+     뒤에 있는 「내 클레임」은 존재 자체를 모른다 (점검 최다 지적: 리뷰어 4명)
+     두 줄이 상하로 붙으므로 패딩·간격을 키워 오탭을 막는다(재검증 지적) */
+  aside.side{width:auto; display:flex; flex-wrap:wrap; padding:8px; gap:4px; align-items:center; border-right:0; border-bottom:1px solid var(--border);}
+  .side a{white-space:nowrap; margin-bottom:0; padding:10px 12px;}
   .side .brand{margin:0 6px 0 0;}
-  .side a.primary{margin:0 6px 0 0; padding:7px 12px;}
+  .side a.primary{margin:0 6px 0 0; padding:9px 12px;}
   .side details{display:contents;}
   .side summary{display:none;}
   .side a.recent{display:none;}   /* 폰에서는 최근 목록 생략 — 공간이 없다 */
+  .topbar a.meta{padding:10px 6px;}               /* 로그아웃도 손가락 크기로 */
   button.mv{min-height:44px; font-size:.95rem;}   /* 한 손 엄지의 최소 터치 크기(44px) — 이 버튼이 폰에서 상태를 바꾸는 유일한 수단 */
 }
+/* 벽걸이 모니터 모드(/?tv=1) — 몇 미터 밖에서 읽히게 전체 확대 + 조작 UI 제거.
+   자동 갱신은 그대로 돌아 상시 표시용이 된다. 입구: 사장 대시보드의 「모니터 모드」 */
+body.tv{zoom:1.55;}
+body.tv aside.side, body.tv .topbar{display:none;}
+body.tv main{max-width:none; padding:16px 28px;}
+body.tv .board{--bw:100%; margin-left:0;}
 h1{font-size:1.25rem; margin:6px 0 10px;}
 h2{font-size:1.05rem; margin:16px 0 8px;}
 .card{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:10px; display:block; color:inherit; text-decoration:none; box-shadow:var(--shadow);}
@@ -103,6 +112,7 @@ a.card:hover{border-color:var(--brand); box-shadow:var(--shadow-hover);}
 .b-status-done{background:var(--st-done-bg); color:var(--st-done-tx);}
 .b-type{background:#ECEEF3; color:var(--sub);}
 .b-urgent{background:var(--urgent); color:#fff;}
+.b-count{background:var(--brand-soft); color:var(--brand-deep);}   /* 건수 배지 — 상태색(파랑=처리중)을 빌리면 축이 흐려져 전용색 */
 .meta{color:var(--sub); font-size:.82rem;}
 .tabs{display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap;}
 .tab{padding:6px 16px; border-radius:999px; border:1px solid var(--line); text-decoration:none; color:var(--text); font-size:.9rem; font-weight:600; background:var(--surface);}
@@ -130,6 +140,10 @@ button.alt-done{background:var(--surface); color:var(--st-done-tx); border:2px s
 .timeline li{border-left:3px solid var(--line); padding:6px 0 6px 12px; margin-left:6px;}
 .timeline b{font-size:.9rem;}
 .timeline .meta{display:block;}
+/* 상태 이동 기록은 위계를 낮춘다 — 지시·처리 보고(사람의 일)가 기계 로그에 묻히지 않게 */
+.timeline li.move{font-size:.8rem; color:var(--sub); padding:3px 0 3px 12px; border-left-color:var(--border);}
+.timeline li.move b{font-size:.8rem; font-weight:600;}
+.timeline li.move .meta{display:inline; margin-left:6px;}
 .instr{background:#FFF9E8; border:1px solid #EAD9A0; border-radius:8px; padding:8px 10px; margin-top:8px; font-size:.92rem;}
 img.photo{display:block; max-width:220px; max-height:220px; border-radius:8px; margin:6px 0; border:1px solid var(--line);}
 .pv-wrap{position:relative; display:inline-block; margin:8px 8px 0 0; vertical-align:top;}
@@ -142,7 +156,13 @@ img.photo{display:block; max-width:220px; max-height:220px; border-radius:8px; m
 .board{--bw: max(100%, calc(100vw - 216px - 56px));
   width:var(--bw); margin-left:calc((100% - var(--bw)) / 2);
   display:flex; gap:12px; align-items:flex-start; overflow-x:auto; padding-bottom:10px;}
-@media (max-width:860px){ .board{--bw: max(100%, calc(100vw - 32px));} }
+/* 폰: 현황판을 세로로 쌓는다 — 가로 스크롤이면 4열 중 1.5열만 보이고, 화면 밖 긴 열 때문에
+   카드 아래로 죽은 공백이 생겼다(재검증·점검 겹침 지적). 흐름 순서는 위→아래로 유지된다.
+   ⚠️ 이 블록은 위 .board 기본 규칙(display:flex)보다 소스에서 뒤에 있어야 이긴다(같은 구체도) */
+@media (max-width:860px){
+  .board{--bw: max(100%, calc(100vw - 32px)); display:block; overflow-x:visible;}
+  .board .col{min-width:0; margin-bottom:12px;}
+}
 .board .col{flex:1; min-width:212px; background:#EFF1F5; border-radius:10px; padding:9px; border-top:4px solid var(--line);}
 .col.s-new{border-top-color:var(--st-new);}
 .col.s-acked{border-top-color:var(--st-acked);}
@@ -178,6 +198,7 @@ button.role-card{display:block; width:100%; text-align:left; background:var(--su
 button.role-card:hover{border-color:var(--brand); box-shadow:var(--shadow-hover);}
 .role-card b{font-weight:700;}
 .role-card .desc{display:block; color:var(--sub); font-size:.85rem; margin-top:2px;}
+.role-card .go{float:right; color:var(--brand-deep); font-weight:700; font-size:.9rem;}   /* 눌림 단서 — 카드가 버튼임을 드러낸다 */
 /* 중립 안내 박스 — 노란 박스(.instr)는 "행동을 요구하는 정보(지시·상시 특이사항)" 전용으로 남긴다 */
 .notebox{background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--brand);
   border-radius:8px; padding:8px 12px; margin:8px 0 14px; font-size:.92rem; color:var(--sub);}
@@ -189,7 +210,7 @@ details.fold[open] summary::after{content:"  ⌃";}
 details.fold > *:not(summary){margin-top:10px;}
 </style>
 </head>
-<body>
+<body class="{{ 'tv' if request.query_params.get('tv') }}">
 <div class="shell">
 {% set user = get_user(request) %}
 <aside class="side">
@@ -204,6 +225,10 @@ details.fold > *:not(summary){margin-top:10px;}
   <a class="{{ 'on' if p.startswith('/me') }}" href="/me">{{ ic.i('user') }} 내 클레임</a>
   {% endif %}
   <a class="{{ 'on' if p == '/' }}" href="/">{{ ic.i('chart') }} 대시보드</a>
+  {% if ASK_ON %}
+  {# 세탁 상담 챗 — 노트북의 상담 모델이 연결됐을 때만 메뉴에 등장 (HANDOFF-ask-chat.md) #}
+  <a class="{{ 'on' if p == '/ask' }}" href="/ask">{{ ic.i('chat') }} 세탁 상담</a>
+  {% endif %}
   <details open><summary>공장</summary>
     {% if user.role == 'owner' %}
     <a class="{{ 'on' if p == '/f/1' }}" href="/f/1">{{ ic.i('factory') }} 제1공장 (창동)</a>

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% block title %}세탁 상담 — 세탁 클레임{% endblock %}
+{% block body %}
+{# 세탁 상담 챗 (HANDOFF-ask-chat.md) — 노트북의 상담 모델이 답한다.
+   문구는 "무엇이든"이 아니라 "세탁 공정과 얼룩" — 지식 밖이면 거절하는 사서 방식이 설계다. #}
+<h1>세탁 상담</h1>
+<p class="meta">세탁 공정과 얼룩에 대해 물어보세요. 감수된 지식 안에서만 답하고, 모르는 것은 모른다고 답하는 상담원입니다.</p>
+
+<form class="box" id="askform">
+  <label>질문 <span class="meta">(2~500자)</span></label>
+  <textarea id="q" required minlength="2" maxlength="500"
+            placeholder="예: 커피 얼룩은 어떻게 빼나요? / 표백은 어느 단계에서 하나요?"></textarea>
+  <button type="submit" id="askbtn">물어보기</button>
+</form>
+
+<p class="meta" id="wait" style="display:none; margin-top:12px">
+  답변 작성 중… (상담원이 쉬고 있었다면 첫 답변은 2분까지 걸릴 수 있습니다)</p>
+<div class="card" id="out" style="display:none; margin-top:12px"></div>
+
+<script>
+// 단발 질문-답: 질문을 서버 중계(/api/ask)로 보내고, 답을 그대로 그린다.
+// 답 텍스트는 textContent로만 넣는다 — 모델 답 속의 「※ 검증 전」 딱지·「⛔」 경고를
+// 표시 그대로 보존하면서(가공 금지 — 안전장치), HTML 주입도 원천 차단.
+var form = document.getElementById('askform');
+form.addEventListener('submit', function (e) {
+  e.preventDefault();
+  var q = document.getElementById('q').value.trim();
+  var btn = document.getElementById('askbtn');
+  var wait = document.getElementById('wait');
+  var out = document.getElementById('out');
+  btn.disabled = true; wait.style.display = 'block'; out.style.display = 'none';
+  var fd = new FormData();
+  fd.append('question', q);
+  fetch('/api/ask', { method: 'POST', body: fd })
+    .then(function (r) { return r.json(); })
+    .then(function (b) {
+      out.innerHTML = ''; out.style.display = 'block';
+      var ans = document.createElement('div');
+      ans.style.whiteSpace = 'pre-wrap';
+      ans.textContent = b.ok ? b.answer : (b.error || '답을 받지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      if (!b.ok) ans.className = 'meta';
+      out.appendChild(ans);
+      (b.sources || []).forEach(function (s) {   // 답의 근거 — 사서 방식의 증명
+        var m = document.createElement('div');
+        m.className = 'meta';
+        m.textContent = '근거 ' + s.n + ': ' + s.title + (s.badge ? ' ✓' : '');
+        out.appendChild(m);
+      });
+    })
+    .catch(function () {
+      out.innerHTML = ''; out.style.display = 'block';
+      out.textContent = '연결에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+    })
+    .finally(function () { btn.disabled = false; wait.style.display = 'none'; });
+});
+</script>
+{% endblock %}

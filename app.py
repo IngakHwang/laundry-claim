@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -51,8 +51,10 @@ TYPE_LABEL = {"quality": "세탁 품질", "delivery": "배송", "etc": "기타"}
 # 낱말이 겹쳐 같은 화면에서 다른 숫자를 세는 혼란을 만들었다 (2026-08-10 UI 점검 지적).
 # '접수'는 이제 동작(KIND_LABEL의 register)에만 쓴다.
 STATUS_LABEL = {"new": "확인 대기", "acked": "확인됨", "working": "처리중", "done": "완료"}
-KIND_LABEL = {"register": "접수", "instruct": "지시", "ack": "확인",
-              "work": "처리 보고", "done": "완료 처리", "note": "메모"}
+# 'ack'는 「확인」이었으나 상태명 「확인 대기/확인됨」과 한 끗 차이라 「지시 확인」으로 (재검증 지적)
+# 'move'는 현황판 카드 이동 전용 — 사람의 조치(처리 보고)와 기계적 이동을 일지에서 구분한다 (2라운드)
+KIND_LABEL = {"register": "접수", "instruct": "지시", "ack": "지시 확인",
+              "work": "처리 보고", "done": "완료 처리", "note": "메모", "move": "상태 이동"}
 ROLE_LABEL = {"owner": "본사", "manager": "공장장", "factory": "공장", "driver": "배송기사"}
 
 
@@ -138,7 +140,7 @@ def db():
     어느 쪽이든 결과 줄은 번호·열 이름 양쪽으로 꺼낼 수 있다."""
     if IS_PG:
         return PgConn(psycopg.connect(DATABASE_URL, row_factory=_pg_rows))
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=15)   # 잠금 대기 넉넉히 — 시드 직후 등 일시 경합에 죽지 않게
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")   # 없는 거래처·담당자를 가리키는 데이터가 못 들어오게
     return con
@@ -341,7 +343,7 @@ def init_db() -> None:
         id           {auto_id},
         complaint_id INTEGER NOT NULL REFERENCES complaints(id),
         actor        TEXT NOT NULL,           -- 누가 (이름 글자 — v1은 로그인이 없으므로)
-        kind         TEXT NOT NULL CHECK (kind IN ('register','instruct','ack','work','done','note')),
+        kind         TEXT NOT NULL CHECK (kind IN ('register','instruct','ack','work','done','note','move')),
         content      TEXT DEFAULT '',
         created_at   TEXT NOT NULL
     );
@@ -354,6 +356,14 @@ def init_db() -> None:
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS ask_log (      -- 세탁 상담 챗 질문·답 기록 — 어떤 질문이 오는지가 다음 개선의 나침반
+        id         {auto_id},
+        asked_by   TEXT NOT NULL,             -- 질문한 사람 (로그인 이름)
+        question   TEXT NOT NULL,
+        answer     TEXT DEFAULT '',           -- 답 또는 실패 사유
+        ok         INTEGER NOT NULL DEFAULT 0,  -- 1=답 성공
+        created_at TEXT NOT NULL
+    );
     """
     con = db()
     if IS_PG:
@@ -361,6 +371,11 @@ def init_db() -> None:
         for stmt in ddl.split(";"):
             if stmt.strip():
                 con.execute(stmt)
+        # 이관(2라운드): 조치 종류에 'move' 추가 — 이미 만들어진 표의 CHECK 제약을 갈아끼운다
+        # (CREATE IF NOT EXISTS는 기존 표를 안 건드리므로 제약만 따로. 매 부팅 반복해도 결과는 같다)
+        con.execute("ALTER TABLE actions DROP CONSTRAINT IF EXISTS actions_kind_check")
+        con.execute("ALTER TABLE actions ADD CONSTRAINT actions_kind_check CHECK "
+                    "(kind IN ('register','instruct','ack','work','done','note','move'))")
     else:
         con.executescript(ddl)
         # 이관: 예전 판은 actions.photo 한 칸에 사진 하나였다 → photos 표로 옮기고 칸을 없앤다
@@ -628,9 +643,16 @@ LEFT JOIN staff s ON s.id = c.assignee_id
 """
 
 
+# ── 세탁 상담 챗 (2026-08-10, HANDOFF-ask-chat.md) ─────────────────────
+# 노트북의 상담 모델(Ollama+Qwen3, 사서 방식)이 두뇌, 이 서버는 얼굴 — 채팅 UI와 중계만 한다.
+# BRAIN_URL 미설정이면 메뉴·화면이 아예 안 나온다(사이트 다른 기능에 영향 0 — HANDOFF 계약).
+BRAIN_URL = os.environ.get("BRAIN_URL", "").rstrip("/")     # Cloudflare Tunnel 주소 (노트북 세션이 발급)
+BRAIN_TOKEN = os.environ.get("BRAIN_TOKEN", "")             # 노트북 API 인증 토큰
+
 # 사이드바가 어느 화면에서든 부르는 전역 함수들
 templates.env.globals["recent_tickets"] = recent_tickets
 templates.env.globals["get_user"] = require_user
+templates.env.globals["ASK_ON"] = bool(BRAIN_URL)           # 상담 챗 메뉴 노출 여부
 
 
 @app.get("/login")
@@ -789,10 +811,11 @@ def set_status(request: Request, ticket_id: int, status: str = Form(...)):
         return RedirectResponse("/login", status_code=303)
     if status not in STATUS_LABEL:
         return RedirectResponse("/board", status_code=303)
-    kind = {"acked": "ack", "working": "work", "done": "done"}.get(status, "note")
+    # 이동은 'move' 한 종류로만 기록 — 예전엔 ack/work로 적어서 드래그가 「처리 보고」처럼 보였다(재검증 지적)
+    move_txt = {"new": "확인 대기로", "acked": "확인됨으로", "working": "처리중으로", "done": "완료로"}[status]
     con = db()
     con.execute("INSERT INTO actions (complaint_id, actor, kind, content, created_at) VALUES (?,?,?,?,?)",
-                (ticket_id, user["name"], kind, f"칸반 보드에서 「{STATUS_LABEL[status]}」로 이동", now()))
+                (ticket_id, user["name"], "move", f"현황판에서 {move_txt} 이동", now()))
     con.execute("UPDATE complaints SET status=?, done_at=? WHERE id=?",
                 (status, now() if status == "done" else None, ticket_id))
     con.commit(); con.close()
@@ -1072,6 +1095,53 @@ def my_tickets(request: Request, staff_id: int):
         "instructions": instructions, "is_self": user["id"] == staff_id,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL, "ROLE_LABEL": ROLE_LABEL,
     })
+
+
+@app.get("/ask")
+def ask_page(request: Request):
+    """세탁 상담 챗 — 노트북의 상담 모델에게 물어보는 화면 (HANDOFF-ask-chat.md).
+    단발 질문-답 구조(대화 기억 없음 — 멀티턴은 사용 로그를 보고 나중에 결정)."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    if not BRAIN_URL:                        # 메뉴가 숨겨져 있어도 주소로 직접 오면 안내
+        return HTMLResponse("세탁 상담은 준비 중입니다. <p><a href='/'>← 대시보드로</a></p>")
+    return templates.TemplateResponse(request, "ask.html", {})
+
+
+@app.post("/api/ask")
+def ask_proxy(request: Request, question: str = Form(...)):
+    """상담 질문 중계 — 로그인 확인 → 길이 검증 → 노트북(BRAIN_URL)으로 전달 → 답을 그대로 반환.
+    답 속의 「※ 현장 검증 전」 딱지와 「⛔」 경고는 안전·정직성 장치라 절대 가공하지 않는다(HANDOFF 계약).
+    질문·답은 ask_log에 남긴다 — 어떤 질문이 들어오는지가 다음 개선의 나침반."""
+    user = require_user(request)
+    if user is None:
+        return JSONResponse({"ok": False, "error": "로그인이 필요합니다"}, status_code=401)
+    q = question.strip()
+    if not (2 <= len(q) <= 500):
+        return JSONResponse({"ok": False, "error": "질문은 2~500자로 적어주세요"}, status_code=400)
+    if not BRAIN_URL:
+        return JSONResponse({"ok": False, "error": "세탁 상담이 아직 준비 중입니다"}, status_code=503)
+    try:
+        req = urllib.request.Request(BRAIN_URL + "/api/ask",
+                                     data=json.dumps({"question": q}).encode("utf-8"))
+        req.add_header("Content-Type", "application/json")
+        req.add_header("X-Brain-Token", BRAIN_TOKEN)
+        # 타임아웃 120초 — 노트북 모델이 잠들어 있던 첫 질문은 2분까지 걸릴 수 있다(HANDOFF)
+        body = json.loads(urllib.request.urlopen(req, timeout=120).read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read().decode("utf-8"))
+        except Exception:
+            body = {"ok": False, "error": f"답변기 응답 오류({e.code}) — 잠시 후 다시 시도해 주세요."}
+    except Exception:                        # 노트북 꺼짐·터널 끊김 — 사이트는 멀쩡해야 한다
+        body = {"ok": False, "error": "지금은 상담원이 쉬고 있습니다. 잠시 후 다시 시도해 주세요."}
+    con = db()
+    con.execute("INSERT INTO ask_log (asked_by, question, answer, ok, created_at) VALUES (?,?,?,?,?)",
+                (user["name"], q, str(body.get("answer") or body.get("error") or "")[:2000],
+                 1 if body.get("ok") else 0, now()))
+    con.commit(); con.close()
+    return JSONResponse(body)
 
 
 @app.get("/kakao/setup")

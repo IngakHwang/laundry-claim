@@ -35,7 +35,7 @@
 {% for s in staff %}
 <a class="card" href="/me/{{ s.id }}">
   <b>{{ s.name }}</b> <span class="badge b-type">{{ ROLE_LABEL[s.role] }}</span>
-  {% if open_by_staff.get(s.id) %}<span class="badge b-status-working">배정 {{ open_by_staff[s.id] }}건</span>{% endif %}
+  {% if open_by_staff.get(s.id) %}<span class="badge b-count">미완료 {{ open_by_staff[s.id] }}건</span>{% endif %}
   <span class="meta">{{ s.duty }} · {{ s.phone }} · {{ s.hired_at }} 입사</span>
 </a>
 {% endfor %}

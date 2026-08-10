@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}공장 대시보드 — 세탁 클레임{% endblock %}
 {% block body %}
-<h1>공장 대시보드 <span class="meta">(15초마다 자동 갱신 — 카드를 끄는 동안은 멈춥니다)</span></h1>
+<h1>공장 대시보드 <span class="meta">(15초마다 자동 갱신 — 조작 중에는 멈춥니다)</span></h1>
 
 {% if allow_all %}
 <div class="tabs">
@@ -10,6 +10,8 @@
   <a class="tab {{ 'active' if cur_factory == f.id }}" href="/?factory={{ f.id }}">{{ f.name }}</a>
   {% endfor %}
   {% if cur_factory %}<a class="meta" href="/f/{{ cur_factory }}">이 공장 상세 →</a>{% endif %}
+  {# 벽걸이 모니터 모드 — 전체 확대 + 조작 UI 제거. 공장 TV에 이 주소를 띄워 두면 된다 #}
+  <a class="meta" href="{{ '/' if request.query_params.get('tv') else '/?tv=1' }}">{{ '일반 모드' if request.query_params.get('tv') else '모니터 모드' }}</a>
   {# 카톡 알림(나에게 보내기) 상태 — 사장만, 그리고 서버에 REST 키가 있을 때만.
      키 등록 전에 노출하면 데모 방문자가 설정 안내 문구를 만나게 된다.
      연동됐으면 어느 계정인지 + 테스트·해제 입구까지 (해제 후 재연동 = 다른 계정으로 갈아타기) #}
@@ -35,7 +37,7 @@
   <a class="stat" href="#sec-done"><b>{{ stats.avg_hours if stats.avg_hours is not none else "—" }}</b><span>평균 처리(시간) ↓</span></a>
 </div>
 
-<h2 id="board-top">클레임 현황판 <span class="meta">(카드를 끌어 상태를 바꿀 수 있습니다)</span></h2>
+<h2 id="board-top">클레임 현황판 <span class="meta">(카드 끌기 또는 「~으로 →」 버튼으로 상태를 바꿉니다)</span></h2>
 {% include "_board.html" %}
 
 <details class="fold" id="sec-open">
@@ -76,10 +78,27 @@
 </details>
 
 <script>
-// 모니터용 자동 갱신 — 단, 카드를 끌고 있는 동안은 건너뛴다 (끌다가 화면이 리셋되는 사고 방지)
-var dragging = false;
+// 모니터용 자동 갱신 — 조작 중에는 멈춘다:
+// ①카드를 끌고 있는 동안 ②입력칸에 커서가 있는 동안 ③마지막 터치·클릭·키·스크롤 후 20초 안.
+// 벽 모니터는 아무도 안 만지니 계속 갱신되고, 폰으로 보던 사람은 방해받지 않는다(재검증 지적:
+// 예전엔 드래그만 감지해서 터치 기기에서 입력·펼침이 15초마다 날아갔다).
+var dragging = false, lastTouch = 0;
 document.addEventListener('dragstart', function () { dragging = true; });
 document.addEventListener('dragend', function () { dragging = false; });
-setInterval(function () { if (!dragging) location.reload(); }, 15000);
+['pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(function (ev) {
+  document.addEventListener(ev, function () { lastTouch = Date.now(); }, { passive: true });
+});
+// 접이 섹션의 펼침 상태를 새로고침 너머로 유지 (id 있는 섹션만)
+document.querySelectorAll('details.fold[id]').forEach(function (dt) {
+  if (sessionStorage.getItem('fold:' + dt.id) === '1') dt.open = true;
+  dt.addEventListener('toggle', function () {
+    sessionStorage.setItem('fold:' + dt.id, dt.open ? '1' : '0');
+  });
+});
+setInterval(function () {
+  var el = document.activeElement;
+  var typing = el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+  if (!dragging && !typing && Date.now() - lastTouch > 20000) location.reload();
+}, 15000);
 </script>
 {% endblock %}

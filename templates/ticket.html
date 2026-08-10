@@ -16,7 +16,8 @@
 <h2>조치 일지 <span class="meta">(한 번 쓰면 안 고칩니다 — 시간순으로만 쌓입니다)</span></h2>
 <ul class="timeline">
   {% for a in acts %}
-  <li>
+  {# 상태 이동(move)은 작게 — 사람의 지시·처리 기록이 기계 로그에 묻히지 않게 #}
+  <li class="{{ 'move' if a.kind == 'move' }}">
     <b>{{ KIND_LABEL[a.kind] }}</b> — {{ a.content }}
     {% if photo_map.get(a.id) %}
     <span class="photos">

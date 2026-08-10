@@ -12,7 +12,7 @@
 <a class="card" href="/me/{{ s.id }}"><b>{{ s.name }}</b> <span class="badge b-type">{{ ROLE_LABEL[s.role] }}</span>
   {% set n = open_n.get(s.id, 0) %}
   {% if n %}
-  <span class="badge b-status-working">미완료 {{ n }}건</span>
+  <span class="badge b-count">미완료 {{ n }}건</span>
   {% if urgent_n.get(s.id) %}<span class="badge b-urgent">긴급 {{ urgent_n[s.id] }}</span>{% endif %}
   {% else %}
   <span class="meta">미완료 없음</span>

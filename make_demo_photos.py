@@ -12,11 +12,36 @@ make_demo_photos.py — 시연용 '그럴싸한' 사진 생성기.
 import random
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 OUT = Path(__file__).parent / "uploads"
 OUT.mkdir(exist_ok=True)
 random.seed(42)          # 돌릴 때마다 같은 그림이 나오게 (재현 가능)
+
+
+def stamp(img: Image.Image) -> Image.Image:
+    """「시연용 예시 이미지」 딱지 — 그린 그림이 깨진 이미지·로딩 실패로 오해받지 않게(UI 재검증 지적).
+    한글 글꼴을 찾아 쓰고(윈도우 맑은고딕 → 리눅스 나눔·Noto), 없는 환경이면 영문으로라도 찍는다."""
+    d = ImageDraw.Draw(img, "RGBA")
+    text, font = "시연용 예시 이미지", None
+    for path in (r"C:\Windows\Fonts\malgun.ttf",
+                 "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+                 "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"):
+        try:
+            font = ImageFont.truetype(path, 26)
+            break
+        except Exception:
+            continue
+    if font is None:
+        text = "SAMPLE IMAGE (DEMO)"
+        try:
+            font = ImageFont.load_default(26)
+        except TypeError:                  # 구버전 Pillow는 크기 인자가 없다
+            font = ImageFont.load_default()
+    w = d.textlength(text, font=font)
+    d.rectangle([16, img.height - 58, 16 + w + 28, img.height - 16], fill=(20, 24, 32, 170))
+    d.text((30, img.height - 50), text, font=font, fill=(255, 255, 255))
+    return img
 
 
 def fabric(w: int, h: int, base: tuple) -> Image.Image:
@@ -39,7 +64,9 @@ def blob(d: ImageDraw.ImageDraw, cx: int, cy: int, r: int, color: tuple, n: int 
 
 
 def save(img: Image.Image, name: str):
-    img.filter(ImageFilter.GaussianBlur(0.6)).save(OUT / name)
+    out = img.filter(ImageFilter.GaussianBlur(0.6))
+    stamp(out)                             # 딱지는 흐림 처리 뒤에 — 글자는 또렷해야 한다
+    out.save(OUT / name)
     print("생성:", name)
 
 
