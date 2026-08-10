@@ -227,7 +227,7 @@ details.fold > *:not(summary){margin-top:10px;}
   <a class="{{ 'on' if p == '/' }}" href="/">{{ ic.i('chart') }} 대시보드</a>
   {% if ASK_ON %}
   {# 세탁 상담 챗 — 노트북의 상담 모델이 연결됐을 때만 메뉴에 등장 (HANDOFF-ask-chat.md) #}
-  <a class="{{ 'on' if p == '/ask' }}" href="/ask">{{ ic.i('chat') }} 세탁 상담</a>
+  <a class="{{ 'on' if p == '/ask' }}" href="/ask">{{ ic.i('chat') }} AI 채팅</a>
   {% endif %}
   <details open><summary>공장</summary>
     {% if user.role == 'owner' %}

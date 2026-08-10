@@ -1117,7 +1117,7 @@ def ask_page(request: Request):
     if user is None:
         return RedirectResponse("/login", status_code=303)
     if not BRAIN_URL:                        # 메뉴가 숨겨져 있어도 주소로 직접 오면 안내
-        return HTMLResponse("세탁 상담은 준비 중입니다. <p><a href='/'>← 대시보드로</a></p>")
+        return HTMLResponse("AI 채팅은 준비 중입니다. <p><a href='/'>← 대시보드로</a></p>")
     con = db()
     # 내 방 목록 — 방마다 쌓인 메시지 개수(n)를 같이 세어 카드에 보여준다.
     # 최신 방이 위로 오도록 id 역순(가장 최근에 만든 방 = 가장 큰 id).
@@ -1138,7 +1138,7 @@ def ask_chat(request: Request, id: int = 0):
     if user is None:
         return RedirectResponse("/login", status_code=303)
     if not BRAIN_URL:                        # 메뉴가 숨겨져 있어도 주소로 직접 오면 안내
-        return HTMLResponse("세탁 상담은 준비 중입니다. <p><a href='/'>← 대시보드로</a></p>")
+        return HTMLResponse("AI 채팅은 준비 중입니다. <p><a href='/'>← 대시보드로</a></p>")
     msgs: list[dict] = []
     con = db()
     if id:
