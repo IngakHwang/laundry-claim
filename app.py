@@ -1189,15 +1189,42 @@ def ask_proxy(request: Request, question: str = Form(...), chat_id: int = Form(0
         if chat is None or chat["staff_id"] != user["id"]:
             con.close()
             return JSONResponse({"ok": False, "error": "이 상담방에 접근할 수 없습니다"}, status_code=403)
+    # ── 계약 v3 (HANDOFF r5에서 확정) — 질문에 「대화 이력」과 「업무 컨텍스트」를 딸려 보낸다 ──
+    # 이력(history): 이 방의 기존 대화 최근 6줄 — "그럼 찬물은?" 같은 후속 질문의 맥락 해석용.
+    # ⚠️ 이번 질문을 저장하기 「전」에 모아야 이력에 이번 질문이 중복으로 들어가지 않는다.
+    # 실패 안내(ok=0)였던 봇 줄은 뺀다 — "상담원이 쉬고 있습니다"는 대화 맥락이 아니라 소음이다.
+    hist_rows = con.execute("""SELECT role, content FROM chat_msgs
+        WHERE chat_id=? AND NOT (role='bot' AND ok=0)
+        ORDER BY id DESC LIMIT 6""", (chat_id,)).fetchall()
+    history = [{"role": r["role"], "content": r["content"][:500]} for r in reversed(hist_rows)]
+    # 컨텍스트(context): 로그인한 사람의 미완료 배정 티켓(긴급 먼저, 최대 10개 — 계약 상한).
+    # 모델은 업무 질문("오늘 할 일")에 이 목록「만」을 근거로 답한다 — DB를 통째로 아는 게 아니라
+    # 질문 순간에 그 사람 몫 조각만 딸려 가는 구조(권한·신선도가 로그인 그대로 적용되는 이유).
+    trows = con.execute(TICKET_SELECT + """
+        WHERE c.assignee_id=? AND c.status != 'done'
+        ORDER BY (c.severity='urgent') DESC, c.created_at ASC LIMIT 10""", (user["id"],)).fetchall()
+    tickets = []
+    for t in trows:
+        # 티켓마다 최신 지시 한 줄 — 기사가 "뭘 하라고 했는지"까지 답에 실리게
+        instr = con.execute("""SELECT content FROM actions
+            WHERE complaint_id=? AND kind='instruct' ORDER BY id DESC LIMIT 1""",
+            (t["id"],)).fetchone()
+        tickets.append({"id": t["id"], "client": t["client_name"],
+                        "status": STATUS_LABEL[t["status"]] + ("(긴급)" if t["severity"] == "urgent" else ""),
+                        "content": t["content"][:200],
+                        "instruction": (instr["content"][:200] if instr else "")})
+    payload = {"question": q, "history": history,
+               "context": {"user": f"{user['name']}({ROLE_LABEL[user['role']]})", "tickets": tickets}}
     # 질문을 먼저 남긴다 — 두뇌 호출이 실패해도 "무엇을 물었는지"는 방에 남아야 한다
     con.execute("INSERT INTO chat_msgs (chat_id, role, content, created_at) VALUES (?,?,?,?)",
                 (chat_id, "user", q, now()))
     con.commit()
     try:
         req = urllib.request.Request(BRAIN_URL + "/api/ask",
-                                     data=json.dumps({"question": q}).encode("utf-8"))
+                                     data=json.dumps(payload, ensure_ascii=False).encode("utf-8"))
         req.add_header("Content-Type", "application/json")
         req.add_header("X-Brain-Token", BRAIN_TOKEN)
+        req.add_header("ngrok-skip-browser-warning", "1")   # ngrok 무료 도메인의 브라우저 경고 페이지 우회(r5 권장)
         # 타임아웃 120초 — 노트북 모델이 잠들어 있던 첫 질문은 2분까지 걸릴 수 있다(HANDOFF)
         body = json.loads(urllib.request.urlopen(req, timeout=120).read().decode("utf-8"))
     except urllib.error.HTTPError as e:
