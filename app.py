@@ -124,8 +124,14 @@ class PgConn:
     def __init__(self, con):
         self._con = con
 
-    def execute(self, sql, params=()):
-        return self._con.execute(sql.replace("?", "%s"), params)
+    def execute(self, sql, params=None):
+        # params가 없으면 psycopg에 아예 안 넘긴다 — 빈 튜플이라도 넘기면 psycopg가 문장 속 %를
+        # 전부 자리표로 해석해서, LIKE 'kakao_%' 같은 순수 SQL의 %에서 죽는다
+        # (카톡 해제 500의 원인 — 2026-08-11 실측. SQLite에선 %가 특별하지 않아 잠복해 있었다).
+        sql = sql.replace("?", "%s")
+        if params is None or params == ():
+            return self._con.execute(sql)
+        return self._con.execute(sql, params)
 
     def executemany(self, sql, rows):
         with self._con.cursor() as cur:
@@ -252,6 +258,11 @@ def kakao_access_token():
             return None                                       # 아직 연동 안 함 (/kakao/setup 전)
         tok = _kakao_token_request({"grant_type": "refresh_token",
                                     "client_id": KAKAO_REST_KEY, "refresh_token": refresh})
+        if "access_token" not in tok:
+            # 갱신 실패(카카오 쪽에서 연결이 끊겼거나 리프레시 토큰 만료) — 죽지 말고 미연동 취급.
+            # 죽은 토큰을 쥔 채 KeyError로 500 나던 것의 수리(2026-08-11, 해제 반쪽 성공 사고 때 발견).
+            print("카카오 토큰 갱신 실패(미연동 취급):", tok.get("error"), tok.get("error_description"))
+            return None
         setting_set(con, "kakao_access_token", tok["access_token"])
         setting_set(con, "kakao_access_expires", str(time.time() + tok.get("expires_in", 21600)))
         if tok.get("refresh_token"):
