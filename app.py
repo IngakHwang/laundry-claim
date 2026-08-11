@@ -20,6 +20,8 @@ app.py — 세탁공장 컴플레인 티켓 시스템 v1
 실행:  .venv\Scripts\python -m uvicorn app:app --reload
 """
 
+import base64
+import io
 import json
 import os
 import sqlite3
@@ -34,6 +36,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from PIL import Image, ImageOps        # 채팅 사진 첨부(이미지 1단계) — 축소·회전 보정·재인코딩에 쓴다
 
 BASE = Path(__file__).parent
 DB_PATH = BASE / "db.sqlite3"
@@ -664,11 +667,16 @@ LEFT JOIN staff s ON s.id = c.assignee_id
 # BRAIN_URL 미설정이면 메뉴·화면이 아예 안 나온다(사이트 다른 기능에 영향 0 — HANDOFF 계약).
 BRAIN_URL = os.environ.get("BRAIN_URL", "").rstrip("/")     # Cloudflare Tunnel 주소 (노트북 세션이 발급)
 BRAIN_TOKEN = os.environ.get("BRAIN_TOKEN", "")             # 노트북 API 인증 토큰
+# 사진 첨부(이미지 1단계, HANDOFF-ask-chat-r8) — 노트북 수신부가 아직 없어(r9 대기),
+# 이 환경변수가 참일 때만 ①화면에 사진 버튼을 보이고 ②payload에 image 필드를 싣는다.
+# 미설정(기본값)이면 사진 관련 코드는 전혀 타지 않아 기존 텍스트 전용 동작과 완전히 같다.
+ASK_IMG_ON = bool(os.environ.get("BRAIN_IMG", ""))
 
 # 사이드바가 어느 화면에서든 부르는 전역 함수들
 templates.env.globals["recent_tickets"] = recent_tickets
 templates.env.globals["get_user"] = require_user
 templates.env.globals["ASK_ON"] = bool(BRAIN_URL)           # 상담 챗 메뉴 노출 여부
+templates.env.globals["ASK_IMG_ON"] = ASK_IMG_ON            # 사진 첨부 UI 노출 여부
 
 
 @app.get("/login")
@@ -1169,17 +1177,80 @@ def ask_chat(request: Request, id: int = 0):
     return templates.TemplateResponse(request, "ask.html", {"chat_id": id, "msgs": msgs, "chats": chats})
 
 
+def shrink_photo(raw: bytes) -> bytes | None:
+    """채팅에 첨부된 사진 원본 바이트를 축소·재인코딩한다 (계약 HANDOFF-ask-chat-r8 §2·§3 그대로).
+    실패하거나(사진이 아님) 재인코딩 후에도 너무 크면 None을 돌려준다 — 호출부가 "사진을
+    못 읽었다" 안내로 처리한다.
+    전송 형식은 항상 JPEG로 고정한다(r8 §2-1) — 노트북 수신부가 PNG·WebP 분기를 만들 필요가
+    없도록, 사용자가 무슨 형식으로 올리든 프록시가 여기서 한 가지로 통일해 내보낸다."""
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img.load()                          # 실제로 픽셀을 읽어봐야 손상된 파일도 여기서 걸러진다
+    except Exception:
+        return None                         # 이미지가 아니거나 손상됨
+    # ⚠️ 순서 중요 — exif_transpose를 축소보다 먼저 해야 한다. 아래서 저장할 때 exif 인자를
+    # 안 줘서 회전 태그(Orientation)까지 통째로 지우는데, 그 전에 태그가 말하는 방향대로
+    # 픽셀 자체를 미리 돌려놓지 않으면 세로로 찍은 폰 사진이 누워서 저장된다(r8 §2-2).
+    img = ImageOps.exif_transpose(img)
+    # PNG 투명 배경·팔레트 모드는 그대로 JPEG로 저장하면 색이 깨지므로 RGB로 통일한다
+    img = img.convert("RGB")
+    img.thumbnail((1600, 1600))             # 긴 변 1600px 이하로 축소 (비율 유지, 확대는 안 함)
+    buf = io.BytesIO()
+    # exif 인자를 안 주는 것만으로 메타데이터(제조사·GPS·회전 태그 등)가 전부 사라진다
+    # — 실측 확인됨(r8 §2-2). 별도의 EXIF 삭제 코드가 필요 없다.
+    img.save(buf, format="JPEG", quality=85)
+    data = buf.getvalue()
+    if len(data) > 4 * 1024 * 1024:         # 4MB 한도는 base64 문자열이 아니라 이 재인코딩된
+        return None                          # JPEG 바이트 기준이다(r8 §2-3) — 1600px·q85면 보통 여유가 크다
+    return data
+
+
 @app.post("/api/ask")
-def ask_proxy(request: Request, question: str = Form(...), chat_id: int = Form(0)):
+def ask_proxy(request: Request, question: str = Form(""), chat_id: int = Form(0),
+              photo: UploadFile | None = File(None)):
+    # question의 기본값이 ""인 이유: FastAPI는 multipart의 "빈 필드"를 누락(missing)으로
+    # 취급해서, 필수(Form(...))로 두면 사진만 보내는 전송(글 없음)이 422로 튕긴다 —
+    # 검수 중 실측으로 발견. 빈 질문의 거절은 아래 길이 검증(2~500자)이 이미 맡고 있다.
     """상담 질문 중계 — 로그인 확인 → 길이 검증 → 방 확보(0이면 새로 만들고, 아니면 내 방인지
     확인) → 질문을 chat_msgs에 저장 → 노트북(BRAIN_URL)으로 전달 → 답을 그대로 반환하며
     chat_msgs에도 저장한다. 방 하나에 「질문 한 줄 + 답 한 줄」이 시간순으로 계속 쌓인다.
-    답 속의 「※ 현장 검증 전」 딱지와 「⛔」 경고는 안전·정직성 장치라 절대 가공하지 않는다(HANDOFF 계약)."""
+    답 속의 「※ 현장 검증 전」 딱지와 「⛔」 경고는 안전·정직성 장치라 절대 가공하지 않는다(HANDOFF 계약).
+    photo: 사진 첨부(이미지 1단계) — ASK_IMG_ON이 꺼져 있으면(BRAIN_IMG 미설정) 화면에서
+    애초에 이 필드를 보내지 않으므로, 아래 사진 처리 분기는 전혀 실행되지 않고 기존 텍스트
+    전용 동작과 완전히 같다(회귀 0, HANDOFF 계약)."""
     user = require_user(request)
     if user is None:
         return JSONResponse({"ok": False, "error": "로그인이 필요합니다"}, status_code=401)
     q = question.strip()
-    if not (2 <= len(q) <= 500):
+    # 사진 읽기 + 축소 — 질문 길이 검증보다 먼저 한다: 사진만 보내고 글이 비어 있어도
+    # 통과시켜야 하는데(아래 "(사진만 보냄)" 대체), 그러려면 사진이 유효한지부터 알아야 한다.
+    img_b64 = None
+    # 사진 처리에 실패했을 때 담을 안내 문구 — None이면 사진이 없었거나 정상 처리된 것.
+    # 이 값이 있으면 아래에서 두뇌를 호출하지 않고, "두뇌 호출이 실패했을 때"와 완전히 같은
+    # 자리(방 확보 → 질문 저장 → 이 문구를 봇 답으로 ok=0 저장 → 반환)로 흘려보낸다 —
+    # 사진이 있었다는 사실 자체는 방에 남아야 하므로, 방을 만들기도 전에 끊어버리지 않는다.
+    photo_error = None
+    if ASK_IMG_ON and photo is not None and photo.filename:
+        raw = photo.file.read()             # 동기 라우트라 await 없이 그냥 읽는다
+        if raw:
+            shrunk = shrink_photo(raw)
+            if shrunk is None:
+                photo_error = "사진을 읽지 못했습니다. JPG·PNG 사진인지, 너무 크지 않은지 확인해 주세요."
+            else:
+                img_b64 = base64.b64encode(shrunk).decode("ascii")
+    # 질문 대체 문구(계약 r7 §2) — 사진이 유효하게 첨부됐고 글이 비어 있으면 이 문구로 통일한다.
+    # 저장(chat_msgs)·history·두뇌 전송(payload["question"]) 모두 이 문구 하나를 기준으로 삼아야
+    # 새로고침 전후, 다음 턴의 이력에서 보이는 모양이 전부 같아진다.
+    if img_b64 and not q:
+        q = "(사진만 보냄)"
+    elif photo_error and not q:
+        # 사진 처리 자체가 실패했을 때 — 사진만 보냈고 글이 없었다면 방·일지에 "무엇을 시도했는지"가
+        # 남아야 하니 빈 문자열 대신 이 문구로 채운다(사진 없이 성공했을 때의 문구와는 다르게 둔다).
+        q = "(사진 첨부 실패)"
+    # 사진 처리 실패는 그 자체가 이미 확정된 오류이므로 질문 길이 검증을 건너뛴다 — 사용자가
+    # 글까지 짧게 썼더라도(또는 위에서 채운 대체 문구든) "질문은 2~500자로" 안내로 뭉개지 않고
+    # "사진을 읽지 못했습니다" 쪽이 그대로 보여야 실제 원인과 화면 안내가 맞아떨어진다.
+    if not photo_error and not (2 <= len(q) <= 500):
         return JSONResponse({"ok": False, "error": "질문은 2~500자로 적어주세요"}, status_code=400)
     if not BRAIN_URL:
         return JSONResponse({"ok": False, "error": "세탁 상담이 아직 준비 중입니다"}, status_code=503)
@@ -1220,25 +1291,34 @@ def ask_proxy(request: Request, question: str = Form(...), chat_id: int = Form(0
                         "instruction": (instr["content"][:200] if instr else "")})
     payload = {"question": q, "history": history,
                "context": {"user": f"{user['name']}({ROLE_LABEL[user['role']]})", "tickets": tickets}}
+    if img_b64:
+        # 사진은 이번 한 턴의 payload에만 실린다 — history·chat_msgs에는 절대 안 들어간다(r8 §2-4).
+        # base64가 이력에 실려 다음 질문마다 계속 되풀이 전송되는 일을 막는 것이 이 분리의 목적이다.
+        payload["image"] = img_b64
     # 질문을 먼저 남긴다 — 두뇌 호출이 실패해도 "무엇을 물었는지"는 방에 남아야 한다
     con.execute("INSERT INTO chat_msgs (chat_id, role, content, created_at) VALUES (?,?,?,?)",
                 (chat_id, "user", q, now()))
     con.commit()
-    try:
-        req = urllib.request.Request(BRAIN_URL + "/api/ask",
-                                     data=json.dumps(payload, ensure_ascii=False).encode("utf-8"))
-        req.add_header("Content-Type", "application/json")
-        req.add_header("X-Brain-Token", BRAIN_TOKEN)
-        req.add_header("ngrok-skip-browser-warning", "1")   # ngrok 무료 도메인의 브라우저 경고 페이지 우회(r5 권장)
-        # 타임아웃 120초 — 노트북 모델이 잠들어 있던 첫 질문은 2분까지 걸릴 수 있다(HANDOFF)
-        body = json.loads(urllib.request.urlopen(req, timeout=120).read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
+    if photo_error:
+        # 사진 처리 실패 — 두뇌를 부를 것도 없이(어차피 보낼 사진이 없다) 바로 오류 모양을 만든다.
+        # 아래 저장·응답 코드는 두뇌 호출 실패 때와 한 글자도 다르지 않은 경로를 그대로 탄다.
+        body = {"ok": False, "error": photo_error}
+    else:
         try:
-            body = json.loads(e.read().decode("utf-8"))
-        except Exception:
-            body = {"ok": False, "error": f"답변기 응답 오류({e.code}) — 잠시 후 다시 시도해 주세요."}
-    except Exception:                        # 노트북 꺼짐·터널 끊김 — 사이트는 멀쩡해야 한다
-        body = {"ok": False, "error": "지금은 상담원이 쉬고 있습니다. 잠시 후 다시 시도해 주세요."}
+            req = urllib.request.Request(BRAIN_URL + "/api/ask",
+                                         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+            req.add_header("Content-Type", "application/json")
+            req.add_header("X-Brain-Token", BRAIN_TOKEN)
+            req.add_header("ngrok-skip-browser-warning", "1")   # ngrok 무료 도메인의 브라우저 경고 페이지 우회(r5 권장)
+            # 타임아웃 120초 — 노트북 모델이 잠들어 있던 첫 질문은 2분까지 걸릴 수 있다(HANDOFF)
+            body = json.loads(urllib.request.urlopen(req, timeout=120).read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            try:
+                body = json.loads(e.read().decode("utf-8"))
+            except Exception:
+                body = {"ok": False, "error": f"답변기 응답 오류({e.code}) — 잠시 후 다시 시도해 주세요."}
+        except Exception:                    # 노트북 꺼짐·터널 끊김 — 사이트는 멀쩡해야 한다
+            body = {"ok": False, "error": "지금은 상담원이 쉬고 있습니다. 잠시 후 다시 시도해 주세요."}
     # 상담원(봇) 답을 저장 — sources는 목록이라 칸 하나에 못 담으니 JSON 문자열로 눌러 담는다
     # (근거 목록은 항상 그 답 하나에만 딸려 함께 읽히므로 표를 더 쪼개지 않아도 된다)
     con.execute("""INSERT INTO chat_msgs (chat_id, role, content, sources, ok, created_at)

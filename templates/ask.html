@@ -195,6 +195,37 @@
   border-radius:50%; background:var(--brand); display:flex; align-items:center; justify-content:center;
   flex:none; cursor:pointer;}
 .inputbar .sendbtn:disabled{opacity:.5; cursor:not-allowed;}
+
+/* ── 사진 첨부(이미지 1단계, HANDOFF-ask-chat-r8) ────────────────────────
+   ASK_IMG_ON 조건부 블록 안에서만 그려지는 마크업에 거는 규칙이라, BRAIN_IMG가 꺼진
+   배포에는 대응하는 요소 자체가 없다 — 죽은 코드가 아니라 "쓰일 준비만 된" 채로 조용히 남는다. */
+
+/* 사진 버튼 — 보내기 버튼(.sendbtn)과 같은 40px 원형 틀이지만, 이건 "보조 동작"이라
+   배경을 페이지 바탕색(옅은 회색) 수준으로 낮추고 아이콘도 브랜드색이 아닌 --sub로 그려서
+   "주 동작(보내기)"과 위계를 분명히 나눈다. */
+.inputbar .photobtn{width:40px; height:40px; margin:0; padding:0; border:0; border-radius:50%;
+  background:var(--bg); color:var(--sub); display:flex; align-items:center; justify-content:center;
+  flex:none; cursor:pointer;}
+.inputbar .photobtn:hover{background:var(--border);}
+.inputbar .photobtn:disabled{opacity:.5; cursor:not-allowed;}
+
+/* 첨부 미리보기 줄 — pill 바로 위, 6px 간격(margin-bottom). 사진을 아직 안 골랐을 때는
+   JS가 display:none으로 감춰 둔다(HTML에는 빈 컨테이너만 있고 평소엔 화면에 안 보인다). */
+.attachbar{display:none; align-items:center; gap:8px; margin-bottom:6px; padding:4px 10px;}
+.attachbar .thumb{width:48px; height:48px; object-fit:cover; border-radius:8px; flex:none;
+  border:1px solid var(--border);}
+/* 파일명 — 길면 말줄임표로 자른다(챗 목록 항목과 같은 관례), 가운데 공간을 최대한 차지 */
+.attachbar .attachname{font-size:.82rem; color:var(--sub); overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; flex:1;}
+/* × 제거 버튼 — 작은 원형, 옅은 회색 배경 위에 × 글자 */
+.attachbar .rmbtn{width:24px; height:24px; margin:0; padding:0; border:0; border-radius:50%;
+  background:var(--border); color:var(--sub); font-size:1rem; line-height:1; flex:none; cursor:pointer;}
+/* 20MB 초과 등 거부 안내 — 긴급색은 과하므로 옅은 회색 대신 사서 방식 오류 안내와 같은 톤 */
+.attachbar .attachwarn{font-size:.82rem; color:var(--sub);}
+
+/* 사용자 말풍선 안의 사진 썸네일 — 텍스트("(사진만 보냄)" 포함) 위쪽에 놓이도록 block,
+   글자보다 먼저 눈에 들어와야 하므로 아래쪽에 여백을 둔다 */
+#chat .msg.user .bubble img.msgphoto{display:block; max-width:180px; border-radius:10px; margin-bottom:6px;}
 </style>
 {% endblock %}
 
@@ -274,7 +305,19 @@
     </div>
 
     <div class="inputbar">
+      {% if ASK_IMG_ON %}
+      {# 사진 첨부(이미지 1단계, HANDOFF-ask-chat-r8) — 환경변수 BRAIN_IMG가 참일 때만 그려진다.
+         꺼져 있으면(기본값) 이 블록 전체가 렌더링 자체가 안 되므로, 사진 버튼도 미리보기 줄도
+         화면에 존재하지 않는다(회귀 0의 근거 — JS도 이 요소들이 null인 것을 전제로 가드한다). #}
+      <div class="attachbar" id="attachbar"></div>
+      {% endif %}
       <div class="pill">
+        {% if ASK_IMG_ON %}
+        {# 카메라 아이콘 버튼 — 누르면 숨겨진 파일 입력(photoIn)을 대신 클릭시킨다(흔한 관례).
+           accept="image/*" — 폰에서는 카메라 촬영/앨범 선택 둘 다 뜬다. #}
+        <button type="button" id="photoBtn" class="photobtn" aria-label="사진 첨부">{{ ic.i('camera', 18) }}</button>
+        <input type="file" id="photoIn" accept="image/*" hidden>
+        {% endif %}
         {# maxlength 500 — 서버 쪽 질문 길이 제약과 맞춘 화면 쪽 1차 방어선 #}
         <textarea id="q" rows="1" maxlength="500" placeholder="커피 얼룩은 어떻게 빼나요?"></textarea>
         <button type="button" id="send" class="sendbtn" aria-label="보내기">
@@ -309,6 +352,20 @@ var AVATAR_HTML = avaEl ? avaEl.innerHTML : '';
 var CHAT_ID = {{ chat_id }};
 // 전송 중 중복 클릭·중복 Enter를 막는 잠금 플래그 (true인 동안은 새 전송을 받지 않는다)
 var sending = false;
+
+// 사진 첨부(이미지 1단계) 관련 엘리먼트 — ASK_IMG_ON이 꺼진 배포에서는 템플릿에 이 요소들
+// 자체가 없으므로 아래 셋 다 null이 된다. 이후 사진 관련 코드는 전부 이 null을 전제로
+// 가드하므로(photoBtn && photoIn 확인, attachbar를 쓰는 함수마다 조기 return), 플래그가 꺼진
+// 상태에서는 어떤 사진 관련 경로도 실행되지 않고 기존 텍스트 전용 동작과 완전히 같다.
+var photoBtn = document.getElementById('photoBtn');
+var photoIn = document.getElementById('photoIn');
+var attachbar = document.getElementById('attachbar');
+// 지금 첨부된 파일 — 한 번에 한 장만 쥔다(새로 고르면 이전 것을 그냥 덮어쓴다).
+var selectedFile = null;
+// 위 파일의 미리보기용 objectURL — 파일이 바뀌거나 제거될 때 반드시 revoke해서 메모리를 돌려준다
+// (말풍선 쪽 objectURL은 이것과 별개다 — 그건 전송 시점에 새로 만들고 일부러 revoke하지 않는다).
+var selectedFileUrl = null;
+
 // 가장 최근에 보낸 질문 문자열을 보관해 두는 변수(항목⑤). sendQuestion()이 호출될 때마다 갱신된다.
 // 실제 "다시 시도" 버튼은 자신이 속한 오류 말풍선이 실패했던 그 순간의 질문을 클로저로 따로 쥐고
 // 있어(addBotBubble의 retryText 매개변수), 이 변수에 기대지 않고도 정확히 그 질문을 재전송한다 —
@@ -345,12 +402,25 @@ function makeAva() {
 }
 
 // 사용자가 보낸 질문을 오른쪽 정렬 말풍선으로 스레드에 추가한다.
-function addUserBubble(text) {
+// file: 사진이 첨부된 전송이면 그 File 객체 — 있으면 말풍선 안에 썸네일을 먼저 넣고 그 아래
+// 텍스트를 붙인다(텍스트가 비어 있던 경우도 sendQuestion이 "(사진만 보냄)"으로 채워 넘긴다).
+function addUserBubble(text, file) {
   var row = document.createElement('div');
   row.className = 'msg user';
   var bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = text; // 내가 입력한 값이라도 원칙은 같다 — textContent로만 넣는다
+  if (file) {
+    var img = document.createElement('img');
+    img.className = 'msgphoto';
+    // objectURL은 이 말풍선이 화면에 떠 있는 동안 계속 필요하므로 여기서는 일부러 revoke하지
+    // 않는다(단순함 우선 — 페이지를 나가면 브라우저가 알아서 정리한다).
+    img.src = URL.createObjectURL(file);
+    bubble.appendChild(img);
+  }
+  // 사진만 보내고 글이 없으면 서버가 "(사진만 보냄)"으로 저장한다 — 화면도 같은 문구를 보여줘야
+  // 새로고침 전(썸네일+문구)과 후(문구만)가 같은 대화로 읽힌다.
+  if (!text && file) text = '(사진만 보냄)';
+  bubble.appendChild(document.createTextNode(text)); // 내가 입력한 값이라도 원칙은 같다 — textContent(텍스트 노드)로만 넣는다
   row.appendChild(bubble);
   chat.appendChild(row);
   scrollToBottom();
@@ -384,13 +454,15 @@ function addTypingBubble() {
 // sendQuestion을 다시 부른다. 사용자 말풍선이 화면에 한 번 더 찍히는 것을 그대로 두는 이유는
 // 의도적이다 — 재시도도 하나의 시도로 DB(chat_msgs)와 화면 양쪽에 똑같이 남아야, 조치 기록
 // (actions)이 append-only인 것과 같은 결로 "몇 번 시도했는지"가 지워지지 않고 쌓인다.
-function addRetryButton(col, questionText) {
+// file: 실패했던 그 전송에 사진이 딸려 있었으면 그 File 객체 — 재시도도 같은 사진과 함께
+// 다시 보낸다(사진만 클로저에서 놓치면 "다시 시도"가 글만 다시 보내는 사고가 난다).
+function addRetryButton(col, questionText, file) {
   var btn = document.createElement('button');
   btn.type = 'button'; // 이 화면엔 <form>이 없지만, 관례대로 submit 취급되지 않게 명시해 둔다
   btn.className = 'retrybtn';
   btn.textContent = '다시 시도';
   btn.addEventListener('click', function () {
-    sendQuestion(questionText);
+    sendQuestion(questionText, file);
   });
   col.appendChild(btn);
 }
@@ -399,7 +471,8 @@ function addRetryButton(col, questionText) {
 // sources: [{n, title, badge}] 형태의 근거 목록 — 있으면 답이 다 그려진 뒤 말풍선 아래에 칩으로 늘어놓는다.
 // isError가 true면 오류/거절 안내이므로 타자기 없이 즉시 보여주고 "다시 시도" 버튼을 붙인다.
 // retryText: 오류일 때 "다시 시도"가 재전송할 질문 문자열(정상 답에서는 쓰지 않는다).
-function addBotBubble(text, sources, isError, retryText) {
+// retryFile: 오류일 때 "다시 시도"가 함께 재전송할 File 객체(사진이 없던 전송이면 undefined).
+function addBotBubble(text, sources, isError, retryText, retryFile) {
   var row = document.createElement('div');
   row.className = 'msg bot';
   row.appendChild(makeAva());
@@ -439,7 +512,7 @@ function addBotBubble(text, sources, isError, retryText) {
     // 오류·거절 안내는 타자기 연출 없이 즉시 전부 보여준다 — 나쁜 소식을 일부러 천천히 보여줄 이유가 없다
     bubble.textContent = text;
     attachSources(); // 오류 답은 sources가 항상 빈 배열이지만, 한 경로로 통일해 둔다
-    addRetryButton(col, retryText); // 항목⑤ — 실패한 질문을 그대로 다시 보낼 수 있게
+    addRetryButton(col, retryText, retryFile); // 항목⑤ — 실패한 질문(+사진)을 그대로 다시 보낼 수 있게
     scrollToBottom();
     return;
   }
@@ -471,6 +544,84 @@ function addBotBubble(text, sources, isError, retryText) {
     }
   }
   requestAnimationFrame(step);
+}
+
+// ── 사진 첨부(이미지 1단계) ──────────────────────────────────────────
+// photoBtn·photoIn·attachbar가 전부 null이면(ASK_IMG_ON 꺼짐) 아래 함수들은 하나같이
+// 맨 앞에서 조기 return하거나(renderAttachbar류) 애초에 이벤트가 안 걸려서(photoBtn && photoIn
+// 가드) 호출될 일이 없다 — 그래서 플래그가 꺼진 배포에서는 이 구역 전체가 죽은 채로만 남는다.
+
+// 미리보기 줄(attachbar)을 지금의 selectedFile 상태에 맞춰 다시 그린다 — 파일이 없으면 통째로
+// 숨기고, 있으면 48px 썸네일 + 파일명 + × 제거 버튼을 새로 만들어 채운다.
+function renderAttachbar() {
+  if (!attachbar) return;
+  attachbar.textContent = ''; // 이전에 그려둔 내용(썸네일 또는 경고 문구)을 비운다
+  if (!selectedFile) {
+    attachbar.style.display = 'none';
+    return;
+  }
+  attachbar.style.display = 'flex';
+  var thumb = document.createElement('img');
+  thumb.className = 'thumb';
+  thumb.src = selectedFileUrl; // 서버 문자열이 아니라 브라우저가 만든 objectURL이라 안전
+  attachbar.appendChild(thumb);
+  var name = document.createElement('span');
+  name.className = 'attachname';
+  name.textContent = selectedFile.name; // 파일 시스템 이름 — 사용자 입력에 준하므로 textContent만
+  attachbar.appendChild(name);
+  var rm = document.createElement('button');
+  rm.type = 'button';
+  rm.className = 'rmbtn';
+  rm.setAttribute('aria-label', '사진 제거');
+  rm.textContent = '×';
+  rm.addEventListener('click', clearSelectedFile);
+  attachbar.appendChild(rm);
+}
+
+// 20MB 초과 등 "그 자리에서 거부"할 때 attachbar 자리에 안내 문구 한 줄만 띄운다.
+function showAttachWarning(msg) {
+  if (!attachbar) return;
+  attachbar.textContent = '';
+  attachbar.style.display = 'flex';
+  var warn = document.createElement('span');
+  warn.className = 'attachwarn';
+  warn.textContent = msg; // 고정 문구(코드에 직접 쓴 글자)라도 원칙대로 textContent만 쓴다
+  attachbar.appendChild(warn);
+}
+
+// 파일 하나를 첨부 상태로 확정한다 — 새로 고르면(기존 것이 있어도) 그냥 덮어써서 "1장만"을 지킨다.
+function setSelectedFile(file) {
+  if (selectedFileUrl) URL.revokeObjectURL(selectedFileUrl); // 이전 미리보기 objectURL은 이제 필요 없으니 반납
+  selectedFile = file;
+  selectedFileUrl = URL.createObjectURL(file);
+  renderAttachbar();
+}
+
+// 첨부를 완전히 비운다 — × 버튼과, 전송을 시작할 때(attachbar 비우기) 둘 다 이걸 부른다.
+function clearSelectedFile() {
+  if (!attachbar) return; // ASK_IMG_ON이 꺼져 있으면 이 함수가 불릴 일이 없지만, 방어적으로 한 번 더 막는다
+  if (selectedFileUrl) URL.revokeObjectURL(selectedFileUrl);
+  selectedFile = null;
+  selectedFileUrl = null;
+  renderAttachbar();
+}
+
+if (photoBtn && photoIn) {
+  // 카메라 버튼은 화면에 안 보이는 실제 파일 입력을 대신 클릭시키기만 한다(흔한 관례 —
+  // <input type=file>의 기본 모양이 버튼 디자인과 안 맞아서 숨기고 아이콘 버튼으로 대신한다).
+  photoBtn.addEventListener('click', function () { photoIn.click(); });
+  photoIn.addEventListener('change', function () {
+    var file = photoIn.files && photoIn.files[0];
+    photoIn.value = ''; // 값을 비워둬야 같은 파일을 다시 골라도 change 이벤트가 또 발생한다
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      // 20MB 초과 원본은 서버(프록시)까지 보내지 않고 그 자리에서 거부한다 — 어차피 재인코딩
+      // 전 원본 크기 기준이라, 서버 축소 단계(shrink_photo)를 거칠 필요조차 없는 경우다.
+      showAttachWarning('사진 파일이 너무 큽니다 — 20MB 이하 사진만 첨부할 수 있어요.');
+      return;
+    }
+    setSelectedFile(file);
+  });
 }
 
 // 입력창 높이를 내용에 맞춰 늘린다 — 1줄로 시작해서 최대 4줄까지 자라고, 그 이상은 안에서 스크롤.
@@ -519,20 +670,28 @@ function addSidebarChatItem(chatId, questionText) {
 // 질문 하나를 실제로 서버에 보내는 흐름 — 사용자 말풍선 → 타이핑 말풍선 → 서버 호출 → 결과 반영.
 // 입력칸(q)을 거치지 않고 임의의 문자열을 보낼 수 있도록 send()에서 분리했다. 이렇게 갈라 둬야
 // 「다시 시도」 버튼(항목⑤)이 입력칸에 다시 타이핑하지 않고도 실패했던 질문을 그대로 재전송할 수 있다.
-function sendQuestion(text) {
+// file: 사진 첨부(이미지 1단계) — 있으면 사용자 말풍선에 썸네일을 넣고 FormData에 photo로 실어
+// 보낸다. ASK_IMG_ON이 꺼진 화면에서는 이 값이 항상 undefined이므로 아래 file 관련 분기는
+// 전부 통과되지 않고, 기존 텍스트 전용 흐름과 완전히 같아진다.
+function sendQuestion(text, file) {
   if (sending) return; // 이미 보내는 중이면 무시(중복 전송 방지) — 재시도 버튼 연타도 여기서 막힌다
   text = (text || '').trim();
-  if (text.length < 2) return; // 방어적 재검증 — 입력칸을 거치지 않는 호출 경로(재시도 버튼)도 있어서다
+  // 방어적 재검증 — 입력칸을 거치지 않는 호출 경로(재시도 버튼)도 있어서다.
+  // 텍스트가 2자 미만이어도 사진이 있으면 통과시킨다(사진만 보내는 전송을 막지 않기 위해) —
+  // 서버 쪽에서 이 경우 question을 "(사진만 보냄)"으로 채워 넣는다.
+  if (text.length < 2 && !file) return;
   lastQuestion = text; // "다시 시도"가 참조할 마지막 질문을 보관해 둔다(항목⑤)
   sending = true;
   q.disabled = true;
   sendBtn.disabled = true; // 전송 중에는 입력·버튼 모두 잠금
-  addUserBubble(text);
+  if (photoBtn) photoBtn.disabled = true; // 사진 버튼도 같이 잠근다(전송 중 새 첨부를 막는다)
+  addUserBubble(text, file);
   var wasNewChat = (CHAT_ID === 0); // 이 요청을 보내는 시점에 아직 방이 없었는지(항목① 판단 기준)
   var typingRow = addTypingBubble();
   var fd = new FormData();
   fd.append('question', text); // 서버 계약(POST /api/ask, FormData 필드 question)은 그대로 유지 — 백엔드 수정 없음
   fd.append('chat_id', CHAT_ID); // 이 방 번호도 함께 보낸다 — 0이면 서버가 이번에 새 방을 만든다
+  if (file) fd.append('photo', file); // 서버(app.py ask_proxy)의 photo 필드 — ASK_IMG_ON일 때만 처리된다
   fetch('/api/ask', { method: 'POST', body: fd })
     .then(function (r) { return r.json(); })
     .then(function (body) {
@@ -551,18 +710,19 @@ function sendQuestion(text) {
       if (body.ok) {
         addBotBubble(body.answer, body.sources || [], false);
       } else {
-        addBotBubble(body.error || '연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', [], true, text);
+        addBotBubble(body.error || '연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', [], true, text, file);
       }
     })
     .catch(function () {
       // 네트워크 자체가 끊긴 경우 — 서버가 응답을 못 준 것과 같은 자리에 안내를 띄운다
       typingRow.remove();
-      addBotBubble('연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', [], true, text);
+      addBotBubble('연결에 실패했습니다. 잠시 후 다시 시도해 주세요.', [], true, text, file);
     })
     .finally(function () {
       sending = false;
       q.disabled = false;
       sendBtn.disabled = false;
+      if (photoBtn) photoBtn.disabled = false;
       q.focus();
     });
 }
@@ -571,10 +731,14 @@ function sendQuestion(text) {
 function send() {
   if (sending) return; // 이미 보내는 중이면 입력칸 값을 건드리지 않는다
   var text = q.value.trim(); // 질문 앞뒤 공백 제거
-  if (text.length < 2) return; // 2자 미만 질문은 무시
+  var file = selectedFile; // 지금 첨부돼 있는 파일(없으면 null) — clearSelectedFile보다 먼저 붙잡아 둔다
+  // 텍스트 2자 미만이어도 사진이 있으면 전송을 허용한다(사진만 보내는 경우) — sendQuestion의
+  // 방어 검사와 같은 기준을 여기서도 지켜야 사용자가 사진만 골라도 보내기 버튼이 먹는다.
+  if (text.length < 2 && !file) return;
   q.value = '';
   autoGrow(); // 비운 뒤 입력창을 다시 1줄 높이로 되돌린다
-  sendQuestion(text);
+  clearSelectedFile(); // 전송을 시작하면 attachbar를 비운다 — 다음 질문을 위한 첨부 자리를 새로 비워 둔다
+  sendQuestion(text, file);
 }
 
 // Enter만 누르면 전송, Shift+Enter는 줄바꿈(기본 동작을 막지 않고 그대로 둔다).
