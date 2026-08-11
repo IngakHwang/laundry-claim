@@ -1313,22 +1313,35 @@ def ask_proxy(request: Request, question: str = Form(""), chat_id: int = Form(0)
         WHERE chat_id=? AND NOT (role='bot' AND ok=0)
         ORDER BY id DESC LIMIT 6""", (chat_id,)).fetchall()
     history = [{"role": r["role"], "content": r["content"][:500]} for r in reversed(hist_rows)]
-    # 컨텍스트(context): 로그인한 사람의 미완료 배정 티켓(긴급 먼저, 최대 10개 — 계약 상한).
-    # 모델은 업무 질문("오늘 할 일")에 이 목록「만」을 근거로 답한다 — DB를 통째로 아는 게 아니라
-    # 질문 순간에 그 사람 몫 조각만 딸려 가는 구조(권한·신선도가 로그인 그대로 적용되는 이유).
+    # 컨텍스트(context): 업무 시야를 역할대로 자른 미완료 티켓(긴급 먼저, 최대 10개 — 계약 상한).
+    # 모델은 업무 질문("오늘 할 일", "지금 처리 중인 게 뭐야")에 이 목록「만」을 근거로 답한다 —
+    # DB를 통째로 아는 게 아니라 질문 순간에 그 사람 시야만큼만 딸려 가는 구조
+    # (화면의 인가 규칙과 같은 축: 사장=전체, 공장장=자기 공장, 직원·기사=본인 배정. 2026-08-11 확장).
+    if user["role"] == "owner":
+        where, args = "", ()                                          # 전체
+    elif user["role"] == "manager":
+        where, args = " AND cl.factory_id=?", (user["factory_id"],)   # 자기 공장
+    else:
+        where, args = " AND c.assignee_id=?", (user["id"],)           # 본인 배정 (기존 그대로)
     trows = con.execute(TICKET_SELECT + """
-        WHERE c.assignee_id=? AND c.status != 'done'
-        ORDER BY (c.severity='urgent') DESC, c.created_at ASC LIMIT 10""", (user["id"],)).fetchall()
+        WHERE c.status != 'done'""" + where + """
+        ORDER BY (c.severity='urgent') DESC, c.created_at ASC LIMIT 10""", args).fetchall()
     tickets = []
     for t in trows:
         # 티켓마다 최신 지시 한 줄 — 기사가 "뭘 하라고 했는지"까지 답에 실리게
         instr = con.execute("""SELECT content FROM actions
             WHERE complaint_id=? AND kind='instruct' ORDER BY id DESC LIMIT 1""",
             (t["id"],)).fetchone()
-        tickets.append({"id": t["id"], "client": t["client_name"],
-                        "status": STATUS_LABEL[t["status"]] + ("(긴급)" if t["severity"] == "urgent" else ""),
-                        "content": t["content"][:200],
-                        "instruction": (instr["content"][:200] if instr else "")})
+        row = {"id": t["id"], "client": t["client_name"],
+               "status": STATUS_LABEL[t["status"]] + ("(긴급)" if t["severity"] == "urgent" else ""),
+               "content": t["content"][:200],
+               "instruction": (instr["content"][:200] if instr else "")}
+        if user["role"] in ("owner", "manager"):
+            # 사장·공장장의 물음은 "누가 하고 있나"까지다 — 담당자 이름을 계약에 추가 필드로 싣는다
+            # (r16 제안: 노트북이 이 필드를 프롬프트에 실어줘야 모델이 이름으로 답할 수 있다.
+            #  노트북이 아직 모르는 필드는 무시되므로, 반영 전에도 기존 동작은 깨지지 않는다)
+            row["assignee"] = t["assignee_name"] or "(미배정)"
+        tickets.append(row)
     payload = {"question": q, "history": history,
                "context": {"user": f"{user['name']}({ROLE_LABEL[user['role']]})", "tickets": tickets}}
     if img_b64:
