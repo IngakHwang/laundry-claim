@@ -285,7 +285,10 @@
               {% if m.sources %}
               <div class="sources">
                 {% for s in m.sources %}
-                <span class="chip">근거 {{ s.n }} · {{ s.title }}{% if s.badge %} ✓{% endif %}</span>
+                {# 조언 인용에는 번호(n)가 있고, 얼룩 인용에는 없다(stain 필드 — r11 §1).
+                   번호가 있을 때만 「근거 N · 」를 앞에 붙이고, 없으면 제목만으로 칩을 만든다
+                   (얼룩 제목이 이미 「얼룩-커피·차·음료」꼴이라 그 자체로 읽힌다). #}
+                <span class="chip">{% if s.n %}근거 {{ s.n }} · {% endif %}{{ s.title }}{% if s.badge %} ✓{% endif %}</span>
                 {% endfor %}
               </div>
               {% endif %}
@@ -501,7 +504,8 @@ function addBotBubble(text, sources, isError, retryText, retryFile) {
       sources.forEach(function (s) {
         var chip = document.createElement('span');
         chip.className = 'chip';
-        chip.textContent = '근거 ' + s.n + ' · ' + s.title + (s.badge ? ' ✓' : ''); // 제목도 서버 문자열 — textContent만
+        // 조언 인용에는 번호(n)가 있고 얼룩 인용에는 없다(r11 §1) — 번호가 있을 때만 「근거 N · 」를 붙인다.
+        chip.textContent = (s.n ? '근거 ' + s.n + ' · ' : '') + s.title + (s.badge ? ' ✓' : ''); // 제목도 서버 문자열 — textContent만
         srcRow.appendChild(chip);
       });
       col.appendChild(srcRow);
