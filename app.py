@@ -1340,7 +1340,13 @@ def ask_proxy(request: Request, question: str = Form(""), chat_id: int = Form(0)
             # 사장·공장장의 물음은 "누가 하고 있나"까지다 — 담당자 이름을 계약에 추가 필드로 싣는다
             # (r16 제안: 노트북이 이 필드를 프롬프트에 실어줘야 모델이 이름으로 답할 수 있다.
             #  노트북이 아직 모르는 필드는 무시되므로, 반영 전에도 기존 동작은 깨지지 않는다)
-            row["assignee"] = t["assignee_name"] or "(미배정)"
+            who = t["assignee_name"] or "(미배정)"
+            row["assignee"] = who
+            # 임시 조치(노트북 r16 반영 전까지): content는 노트북이 이미 프롬프트에 싣는 필드라,
+            # 담당자를 여기 접두로 넣으면 오늘부터 "누가 맡고 있나"에 이름으로 답할 수 있다.
+            # 실측 근거: 접두 없이는 사장 질문에 "사장님이 직접 처리 중"이라는 오답이 나왔다(2026-08-11).
+            # 노트북이 assignee 필드를 정식 반영하면 이 접두는 지운다.
+            row["content"] = f"[담당: {who}] " + t["content"][:180]
         tickets.append(row)
     payload = {"question": q, "history": history,
                "context": {"user": f"{user['name']}({ROLE_LABEL[user['role']]})", "tickets": tickets}}
