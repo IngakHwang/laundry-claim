@@ -211,7 +211,10 @@
 
 /* 첨부 미리보기 줄 — pill 바로 위, 6px 간격(margin-bottom). 사진을 아직 안 골랐을 때는
    JS가 display:none으로 감춰 둔다(HTML에는 빈 컨테이너만 있고 평소엔 화면에 안 보인다). */
-.attachbar{display:none; align-items:center; gap:8px; margin-bottom:6px; padding:4px 10px;}
+.attachbar{display:none; align-items:center; gap:8px; margin-bottom:6px; padding:4px 10px; flex-wrap:wrap;}
+/* 수집·목적 고지 — 봇 답변에서 「받아뒀다」 문구를 빼는 대신(인각님 2026-08-11, r13 보강)
+   보내기 전인 이 자리에서 알린다. flex-basis:100%로 둘째 줄 전체를 차지한다. */
+.attachbar .attachnote{flex-basis:100%; font-size:.75rem; color:var(--sub);}
 .attachbar .thumb{width:48px; height:48px; object-fit:cover; border-radius:8px; flex:none;
   border:1px solid var(--border);}
 /* 파일명 — 길면 말줄임표로 자른다(챗 목록 항목과 같은 관례), 가운데 공간을 최대한 차지 */
@@ -580,6 +583,12 @@ function renderAttachbar() {
   rm.textContent = '×';
   rm.addEventListener('click', clearSelectedFile);
   attachbar.appendChild(rm);
+  // 수집·목적 고지 — 보내기 전에 보여야 고지다. 봇 답변의 「받아뒀다」 문구는 없애기로
+  // 했으므로(인각님 결정, r13 보강) 사용자가 사진을 고른 이 순간이 유일한 고지 자리다.
+  var note = document.createElement('span');
+  note.className = 'attachnote';
+  note.textContent = '전송한 사진은 얼룩 판독 기능 개발에 참고됩니다.';
+  attachbar.appendChild(note);
 }
 
 // 20MB 초과 등 "그 자리에서 거부"할 때 attachbar 자리에 안내 문구 한 줄만 띄운다.
