@@ -286,6 +286,203 @@ def notify(target: str, message: str, ticket_id: int | None = None) -> None:
         print("카톡 알림 실패(무시하고 계속):", e)
 
 
+def seed_demo(con) -> None:
+    """시연용 예시 데이터를 넣는다. 최초 부팅(빈 DB)과 데모 리셋 두 곳에서 부른다."""
+    con.executemany("INSERT INTO factories (id, name, note) VALUES (?,?,?)", [
+        (1, "제1공장 (창동)", "공장장 1 + 인력 16 + 기사 2 · 담당 8개 업체 · 월 매출 약 1.6억 가정(업체당 약 2천만)"),
+        (2, "제2공장 (의정부)", "공장장 1 + 인력 4 + 기사 1 · 담당 2개 업체"),
+    ])
+    # 하루 물량 추정 공식: 객실수 × 가동률 70% × 객실당 리넨 약 4kg
+    # (요양병원 = 침상 × 3kg, 웨딩홀 = 행사 기준이라 객실수 0)
+    con.executemany("""INSERT INTO clients
+        (factory_id, name, biz_type, rooms, daily_kg, note) VALUES (?,?,?,?,?,?)""", [
+        (1, "그랜드한강호텔",        "관광호텔",     350, 980, "이불류는 항상 개별 포장"),
+        (1, "수유 리버사이드호텔",   "관광호텔",     300, 840, ""),
+        (1, "의정부 엠스테이션호텔", "비즈니스호텔", 200, 560, "고객 유실물 발견 시 즉시 보고"),
+        (1, "창동 호텔더블유",       "비즈니스호텔", 180, 500, ""),
+        (1, "스테이노원",            "비즈니스호텔", 150, 420, ""),
+        (1, "강북성심요양병원",      "요양병원",     300, 900, "환자복·시트 분리 수거, 감염성 세탁물 별도 처리"),
+        (1, "도봉 베뉴모텔",         "모텔",          60, 170, ""),
+        (1, "미아 클라우드모텔",     "모텔",          45, 130, ""),
+        (2, "의정부 그랜드컨벤션",   "웨딩홀·연회",    0, 600, "행사 일정 따라 물량 변동 큼 — 주말 집중"),
+        (2, "포천 힐스파리조트",     "온천리조트",   120, 340, "주말 물량 2배"),
+    ])
+    # 인력: 제1공장 공장장1+16+기사4, 제2공장 공장장1+4+기사1
+    # 공정은 세탁공장 실제 흐름(세탁→건조→다림→포장→검수)에서, 입사일은 돌려가며 배정
+    duties = ["세탁", "건조", "다림(롤러)", "포장", "검수"]
+    hires = ["2019-03", "2020-11", "2021-06", "2022-02", "2022-09", "2023-04", "2024-01", "2025-05"]
+    rows = [
+        (None, "사장", "owner", "본사 — 두 공장 전체 총괄", "2018-01"),   # factory_id 없음 = 전체를 본다
+        (1, "강만석", "manager", "제1공장 총괄 (생산·품질 책임)", "2018-05"),
+        (2, "윤정례", "manager", "제2공장 총괄", "2021-01"),
+    ]
+    f1_workers = ["김세탁", "이다림", "박정리", "최민수", "정호영", "한가람", "오세훈", "서지우",
+                  "남기웅", "문채원", "임태호", "조성민", "배수지", "신동엽", "권나라", "황보라"]
+    rows += [(1, n, "factory", duties[i % 5] + " 담당", hires[i % 8]) for i, n in enumerate(f1_workers)]
+    rows += [(2, n, "factory", duties[i % 5] + " 담당", hires[(i + 3) % 8])
+             for i, n in enumerate(["장미란", "전상국", "고아라", "유병재"])]
+    rows += [
+        (1, "박기사", "driver", "1호차 — 창동·도봉 방면", "2020-04"),
+        (1, "최배송", "driver", "2호차 — 수유·미아 방면", "2022-08"),
+        (1, "정노선", "driver", "3호차 — 의정부 방면", "2023-10"),
+        (1, "한기동", "driver", "4호차 — 대형 호텔 전담", "2024-06"),
+        (2, "나운전", "driver", "의정부·포천 방면", "2022-03"),
+    ]
+    for i, (fid, name, role, duty, hired) in enumerate(rows):
+        con.execute("INSERT INTO staff (factory_id, name, role, duty, phone, hired_at) VALUES (?,?,?,?,?,?)",
+                    (fid, name, role, duty, f"010-20{i:02d}-{3000 + i * 7:04d}", hired))  # 번호는 전부 가짜
+
+    # ── 품목 사전 + 거래처별 취급 품목 ──────────────────────
+    # 품목 이름은 현장 용어대로 (대타올·중타올·발매트 — 2026-08-07 인각님 용어)
+    item_names = ["시트", "이불커버", "베개피", "대타올", "중타올", "발매트",
+                  "가운", "침대패드", "환자복", "담요", "테이블보", "냅킨"]
+    con.executemany("INSERT INTO items (name) VALUES (?)", [(n,) for n in item_names])
+    item_id = {n: i + 1 for i, n in enumerate(item_names)}
+
+    # 객실 하나(투숙 기준)가 하루에 내놓는 표준 세트 — 인각님 현장 실측 기준
+    # (시트 1 · 커버 1 · 베개피 2~4 · 대타올 1~2 · 중타올 3~4 · 발매트 1. 2026-08-07 정정 —
+    #  Claude 초기 추정 "시트 2장"이 틀렸던 것)
+    HOTEL_SET = {"시트": 1, "이불커버": 1, "베개피": 3, "대타올": 2, "중타올": 3,
+                 "발매트": 1, "침대패드": 0.2}
+    profiles = {
+        "그랜드한강호텔":        dict(HOTEL_SET, **{"가운": 2}),   # 관광호텔 — 가운까지 풀 세트
+        "수유 리버사이드호텔":   dict(HOTEL_SET, **{"가운": 2}),
+        "의정부 엠스테이션호텔": dict(HOTEL_SET),                  # 비즈니스 — 가운 없음
+        "창동 호텔더블유":       dict(HOTEL_SET),
+        "스테이노원":            {k: v for k, v in HOTEL_SET.items() if k != "발매트"},  # 발매트도 없음
+        "도봉 베뉴모텔":         {"시트": 1, "이불커버": 1, "베개피": 2, "대타올": 1, "중타올": 3},
+        "미아 클라우드모텔":     {"시트": 1, "이불커버": 1, "베개피": 2, "대타올": 1, "중타올": 3},
+        "포천 힐스파리조트":     dict(HOTEL_SET, **{"가운": 2}),
+    }
+    for cname, prof in profiles.items():
+        crow = con.execute("SELECT id, rooms FROM clients WHERE name=?", (cname,)).fetchone()
+        occupied = int(crow["rooms"] * 0.7)          # 가동률 70% 가정
+        for iname, per_room in prof.items():
+            con.execute("INSERT INTO client_items VALUES (?,?,?)",
+                        (crow["id"], item_id[iname], int(occupied * per_room)))
+    # 표준 세트가 안 맞는 두 곳은 손으로 (요양병원 = 환자복 중심, 웨딩홀 = 테이블 리넨 중심)
+    py_id = con.execute("SELECT id FROM clients WHERE name='강북성심요양병원'").fetchone()["id"]
+    for iname, qty in {"환자복": 210, "시트": 100, "베개피": 100, "담요": 30, "중타올": 150}.items():
+        con.execute("INSERT INTO client_items VALUES (?,?,?)", (py_id, item_id[iname], qty))
+    wd_id = con.execute("SELECT id FROM clients WHERE name='의정부 그랜드컨벤션'").fetchone()["id"]
+    for iname, qty in {"테이블보": 120, "냅킨": 700, "중타올": 60}.items():
+        con.execute("INSERT INTO client_items VALUES (?,?,?)", (wd_id, item_id[iname], qty))
+
+    def sid(name):
+        """이름으로 담당자 id 찾기 (예시 티켓 배정용)."""
+        return con.execute("SELECT id FROM staff WHERE name=?", (name,)).fetchone()[0]
+
+    def add_ticket(client, type_, sev, content, channel, assignee, created, acts, status, done=None):
+        """예시 티켓 한 건 + 조치 일지 + 사진.
+        acts = [(누가, 종류, 내용, 시각, [사진 파일명들])]. 사진은 make_demo_photos.py 가 만든 데모 이미지."""
+        tid = insert_id(con, """INSERT INTO complaints
+            (client_id, type, severity, content, channel, assignee_id, status, created_at, done_at)
+            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (client, type_, sev, content, channel, sid(assignee), status, created, done))
+        for actor, kind, text, at, photo_files in acts:
+            aid = insert_id(con, """INSERT INTO actions (complaint_id, actor, kind, content, created_at)
+                                    VALUES (?,?,?,?,?)""", (tid, actor, kind, text, at))
+            for ph in photo_files:
+                con.execute("INSERT INTO photos (action_id, filename) VALUES (?,?)", (aid, ph))
+
+    # ── 예시 티켓 — 두 공장 모두, 여러 날짜에 걸쳐 (완료 이력이 있어야 평균 처리 시간이 산다) ──
+    today = now()[:10]
+    add_ticket(1, "delivery", "urgent", "어제 납품분에 다른 업체 수건이 섞여 왔음. 회수 요청.",
+               "전화", "박기사", f"{today} 08:40", [
+        ("사장", "register", "그랜드한강호텔 지배인 전화 접수", f"{today} 08:40", ["demo_towels_mixed.png"]),
+        ("사장", "instruct", "오늘 수거 때 섞인 수건 회수해 올 것", f"{today} 08:42", []),
+    ], "new")
+    add_ticket(6, "quality", "normal", "환자복 소매 얼룩이 안 빠진 채 납품됨 (3벌)",
+               "문자", "김세탁", "2026-08-06 14:10", [
+        ("사장", "register", "요양병원 문자 접수, 사진 받음", "2026-08-06 14:10", ["demo_sleeve_stain.png"]),
+        ("김세탁", "work", "재세탁 진행. 녹 계열 얼룩이라 전용 처리 필요", "2026-08-06 16:30", []),
+    ], "working")
+    add_ticket(7, "quality", "normal", "수건 5장이 누렇게 변색된 채 왔다고 교환 요청",
+               "전화", "이다림", "2026-08-05 10:20", [
+        ("사장", "register", "베뉴모텔 사장님 전화", "2026-08-05 10:20", ["demo_towel_yellow.png"]),
+        ("이다림", "ack", "지시 확인", "2026-08-05 10:55", []),
+        ("이다림", "work", "재세탁 후 검수 — 변색 심한 3장은 폐기, 새 수건으로 교체", "2026-08-05 14:20", []),
+        ("이다림", "done", "교체분 당일 배송 완료", "2026-08-05 15:40", []),
+    ], "done", "2026-08-05 15:40")
+    add_ticket(9, "quality", "urgent", "토요일 행사분 테이블보에 와인 얼룩 12장이 그대로 납품됨",
+               "전화", "장미란", f"{today} 09:15", [
+        ("사장", "register", "웨딩홀 매니저 전화 — 다음 행사가 금요일이라 급함", f"{today} 09:15", ["demo_tablecloth_wine.png"]),
+        ("장미란", "ack", "지시 확인", f"{today} 09:40", []),
+        ("장미란", "work", "전량 회수해 얼룩 전용 재세탁 돌리는 중", f"{today} 11:05", []),
+    ], "working")
+    add_ticket(10, "delivery", "normal", "가운 40장 수량 부족 — 주말 투숙 앞두고 보충 요청",
+               "문자", "나운전", f"{today} 10:30", [
+        ("사장", "register", "리조트 프런트 문자", f"{today} 10:30", []),
+        ("사장", "instruct", "내일 오전 배송 때 가운 40장 추가 적재", f"{today} 10:33", []),
+        ("나운전", "ack", "지시 확인", f"{today} 12:02", []),
+    ], "acked")
+    add_ticket(10, "quality", "normal", "스파 타월에서 꿉꿉한 냄새가 난다는 고객 불만",
+               "전화", "윤정례", "2026-08-04 09:00", [
+        ("사장", "register", "리조트 지배인 전화", "2026-08-04 09:00", ["demo_towel_mold.png"]),
+        ("윤정례", "work", "건조 공정 점검 — 건조기 2호기 온도 저하 발견", "2026-08-04 13:30", []),
+        ("윤정례", "done", "재세탁·완전 건조 후 재납품. 건조기 수리 완료", "2026-08-04 17:10", []),
+    ], "done", "2026-08-04 17:10")
+    add_ticket(5, "etc", "normal", "수거 방문을 오전 7시 이전으로 바꿔달라는 요청",
+               "전화", "최배송", "2026-08-06 09:50", [
+        ("사장", "register", "스테이노원 프런트 전화", "2026-08-06 09:50", []),
+        ("사장", "instruct", "2호차 노선 순서 조정 검토", "2026-08-06 09:55", []),
+    ], "new")
+    # ── 추가분: 여러 인력·여러 날짜에 걸친 이력 (인력별 배정 화면이 의미 있으려면 골고루 필요) ──
+    add_ticket(2, "quality", "normal", "가운 허리끈 6개가 세탁 후 사라졌다는 항의",
+               "전화", "문채원", "2026-08-02 11:20", [
+        ("사장", "register", "리버사이드 하우스키핑 전화", "2026-08-02 11:20", []),
+        ("문채원", "work", "포장 라인 점검 — 끈 분리 세탁분이 별도 망에 있었음", "2026-08-02 14:00", []),
+        ("문채원", "done", "6개 전량 찾아 당일 재납품", "2026-08-02 16:30", []),
+    ], "done", "2026-08-02 16:30")
+    add_ticket(3, "delivery", "normal", "납품이 이틀 연속 오전 11시를 넘겼다는 항의",
+               "문자", "정노선", "2026-08-03 09:10", [
+        ("사장", "register", "엠스테이션 지배인 문자", "2026-08-03 09:10", []),
+        ("정노선", "ack", "지시 확인", "2026-08-03 09:30", []),
+        ("정노선", "done", "3호차 출발 순서를 바꿔 9시 30분 납품으로 조정", "2026-08-03 13:00", []),
+    ], "done", "2026-08-03 13:00")
+    add_ticket(4, "quality", "normal", "시트 구김이 심해 다시 다려달라는 요청 (20장)",
+               "전화", "한가람", "2026-08-06 15:40", [
+        ("사장", "register", "호텔더블유 프런트 전화", "2026-08-06 15:40", []),
+        ("한가람", "ack", "지시 확인", "2026-08-06 16:00", []),
+        ("한가람", "work", "롤러 온도 재설정 후 재다림 중", "2026-08-06 17:10", []),
+    ], "working")
+    add_ticket(8, "delivery", "urgent", "오늘 수거를 안 왔다는 연락 — 세탁물이 쌓여 있음",
+               "전화", "최배송", "2026-08-01 17:30", [
+        ("사장", "register", "클라우드모텔 사장님 전화", "2026-08-01 17:30", []),
+        ("최배송", "ack", "지시 확인 — 노선 착오였음", "2026-08-01 17:45", []),
+        ("최배송", "done", "당일 저녁 수거 완료, 다음날 우선 납품", "2026-08-01 19:20", []),
+    ], "done", "2026-08-01 19:20")
+    add_ticket(5, "quality", "normal", "베개피 30장이 수량 부족으로 납품됨",
+               "문자", "박정리", "2026-07-31 10:00", [
+        ("사장", "register", "스테이노원 문자", "2026-07-31 10:00", []),
+        ("박정리", "work", "포장 대수 대조 — 다른 호텔 묶음에 섞여 나간 것 확인", "2026-07-31 11:30", []),
+        ("박정리", "done", "30장 회수·재납품, 포장 검수 절차에 수량 체크 추가", "2026-07-31 15:00", []),
+    ], "done", "2026-07-31 15:00")
+    add_ticket(1, "etc", "normal", "빈 세탁망 40개를 다음 수거 때 돌려달라는 요청",
+               "전화", "한기동", f"{today} 11:50", [
+        ("사장", "register", "그랜드한강 하우스키핑 전화", f"{today} 11:50", []),
+        ("사장", "instruct", "4호차 내일 적재분에 세탁망 40개 포함", f"{today} 11:52", []),
+    ], "new")
+    add_ticket(9, "delivery", "urgent", "금요일 행사가 목요일로 앞당겨짐 — 납품 하루 앞당겨달라",
+               "전화", "나운전", "2026-08-06 16:20", [
+        ("사장", "register", "웨딩홀 매니저 전화", "2026-08-06 16:20", []),
+        ("나운전", "ack", "지시 확인", "2026-08-06 16:40", []),
+        ("나운전", "work", "목요일 오전 배송으로 일정 재편성 중", "2026-08-06 17:30", []),
+    ], "working")
+    add_ticket(10, "quality", "normal", "침대패드 4장에 누런 얼룩 — 교체 요청",
+               "문자", "고아라", "2026-08-05 13:10", [
+        ("사장", "register", "리조트 하우스키핑 문자", "2026-08-05 13:10", ["demo_towel_yellow.png"]),
+        ("고아라", "work", "재세탁 시험 — 오래된 얼룩이라 표백 처리", "2026-08-05 15:00", []),
+        ("고아라", "done", "2장 복원, 2장은 폐기 후 신품 교체", "2026-08-05 18:20", []),
+    ], "done", "2026-08-05 18:20")
+    add_ticket(9, "quality", "normal", "냅킨 100장 다림 상태 불량 — 행사용으로 못 쓴다는 항의",
+               "전화", "전상국", "2026-08-02 10:40", [
+        ("사장", "register", "웨딩홀 매니저 전화", "2026-08-02 10:40", []),
+        ("전상국", "work", "재다림 진행", "2026-08-02 13:00", []),
+        ("전상국", "done", "전량 재다림 후 당일 납품", "2026-08-02 16:00", []),
+    ], "done", "2026-08-02 16:00")
+
+
 def init_db() -> None:
     """표를 만들고, 비어 있으면 시연용 예시 데이터를 넣는다. (SQLite·Postgres 공용)"""
     # id 자동 번호 방식이 다르다: SQLite는 INTEGER PRIMARY KEY면 자동,
@@ -400,199 +597,7 @@ def init_db() -> None:
     # ⚠️ 업체 이름은 전부 가상이다. 실존 호텔·모텔의 「유형과 규모」만 본떴다 —
     #    실명에 지어낸 컴플레인을 붙여 공개 배포하면 그 업체에 대한 허위 기록이 되기 때문.
     if con.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 0:
-        con.executemany("INSERT INTO factories (id, name, note) VALUES (?,?,?)", [
-            (1, "제1공장 (창동)", "공장장 1 + 인력 16 + 기사 2 · 담당 8개 업체 · 월 매출 약 1.6억 가정(업체당 약 2천만)"),
-            (2, "제2공장 (의정부)", "공장장 1 + 인력 4 + 기사 1 · 담당 2개 업체"),
-        ])
-        # 하루 물량 추정 공식: 객실수 × 가동률 70% × 객실당 리넨 약 4kg
-        # (요양병원 = 침상 × 3kg, 웨딩홀 = 행사 기준이라 객실수 0)
-        con.executemany("""INSERT INTO clients
-            (factory_id, name, biz_type, rooms, daily_kg, note) VALUES (?,?,?,?,?,?)""", [
-            (1, "그랜드한강호텔",        "관광호텔",     350, 980, "이불류는 항상 개별 포장"),
-            (1, "수유 리버사이드호텔",   "관광호텔",     300, 840, ""),
-            (1, "의정부 엠스테이션호텔", "비즈니스호텔", 200, 560, "고객 유실물 발견 시 즉시 보고"),
-            (1, "창동 호텔더블유",       "비즈니스호텔", 180, 500, ""),
-            (1, "스테이노원",            "비즈니스호텔", 150, 420, ""),
-            (1, "강북성심요양병원",      "요양병원",     300, 900, "환자복·시트 분리 수거, 감염성 세탁물 별도 처리"),
-            (1, "도봉 베뉴모텔",         "모텔",          60, 170, ""),
-            (1, "미아 클라우드모텔",     "모텔",          45, 130, ""),
-            (2, "의정부 그랜드컨벤션",   "웨딩홀·연회",    0, 600, "행사 일정 따라 물량 변동 큼 — 주말 집중"),
-            (2, "포천 힐스파리조트",     "온천리조트",   120, 340, "주말 물량 2배"),
-        ])
-        # 인력: 제1공장 공장장1+16+기사4, 제2공장 공장장1+4+기사1
-        # 공정은 세탁공장 실제 흐름(세탁→건조→다림→포장→검수)에서, 입사일은 돌려가며 배정
-        duties = ["세탁", "건조", "다림(롤러)", "포장", "검수"]
-        hires = ["2019-03", "2020-11", "2021-06", "2022-02", "2022-09", "2023-04", "2024-01", "2025-05"]
-        rows = [
-            (None, "사장", "owner", "본사 — 두 공장 전체 총괄", "2018-01"),   # factory_id 없음 = 전체를 본다
-            (1, "강만석", "manager", "제1공장 총괄 (생산·품질 책임)", "2018-05"),
-            (2, "윤정례", "manager", "제2공장 총괄", "2021-01"),
-        ]
-        f1_workers = ["김세탁", "이다림", "박정리", "최민수", "정호영", "한가람", "오세훈", "서지우",
-                      "남기웅", "문채원", "임태호", "조성민", "배수지", "신동엽", "권나라", "황보라"]
-        rows += [(1, n, "factory", duties[i % 5] + " 담당", hires[i % 8]) for i, n in enumerate(f1_workers)]
-        rows += [(2, n, "factory", duties[i % 5] + " 담당", hires[(i + 3) % 8])
-                 for i, n in enumerate(["장미란", "전상국", "고아라", "유병재"])]
-        rows += [
-            (1, "박기사", "driver", "1호차 — 창동·도봉 방면", "2020-04"),
-            (1, "최배송", "driver", "2호차 — 수유·미아 방면", "2022-08"),
-            (1, "정노선", "driver", "3호차 — 의정부 방면", "2023-10"),
-            (1, "한기동", "driver", "4호차 — 대형 호텔 전담", "2024-06"),
-            (2, "나운전", "driver", "의정부·포천 방면", "2022-03"),
-        ]
-        for i, (fid, name, role, duty, hired) in enumerate(rows):
-            con.execute("INSERT INTO staff (factory_id, name, role, duty, phone, hired_at) VALUES (?,?,?,?,?,?)",
-                        (fid, name, role, duty, f"010-20{i:02d}-{3000 + i * 7:04d}", hired))  # 번호는 전부 가짜
-
-        # ── 품목 사전 + 거래처별 취급 품목 ──────────────────────
-        # 품목 이름은 현장 용어대로 (대타올·중타올·발매트 — 2026-08-07 인각님 용어)
-        item_names = ["시트", "이불커버", "베개피", "대타올", "중타올", "발매트",
-                      "가운", "침대패드", "환자복", "담요", "테이블보", "냅킨"]
-        con.executemany("INSERT INTO items (name) VALUES (?)", [(n,) for n in item_names])
-        item_id = {n: i + 1 for i, n in enumerate(item_names)}
-
-        # 객실 하나(투숙 기준)가 하루에 내놓는 표준 세트 — 인각님 현장 실측 기준
-        # (시트 1 · 커버 1 · 베개피 2~4 · 대타올 1~2 · 중타올 3~4 · 발매트 1. 2026-08-07 정정 —
-        #  Claude 초기 추정 "시트 2장"이 틀렸던 것)
-        HOTEL_SET = {"시트": 1, "이불커버": 1, "베개피": 3, "대타올": 2, "중타올": 3,
-                     "발매트": 1, "침대패드": 0.2}
-        profiles = {
-            "그랜드한강호텔":        dict(HOTEL_SET, **{"가운": 2}),   # 관광호텔 — 가운까지 풀 세트
-            "수유 리버사이드호텔":   dict(HOTEL_SET, **{"가운": 2}),
-            "의정부 엠스테이션호텔": dict(HOTEL_SET),                  # 비즈니스 — 가운 없음
-            "창동 호텔더블유":       dict(HOTEL_SET),
-            "스테이노원":            {k: v for k, v in HOTEL_SET.items() if k != "발매트"},  # 발매트도 없음
-            "도봉 베뉴모텔":         {"시트": 1, "이불커버": 1, "베개피": 2, "대타올": 1, "중타올": 3},
-            "미아 클라우드모텔":     {"시트": 1, "이불커버": 1, "베개피": 2, "대타올": 1, "중타올": 3},
-            "포천 힐스파리조트":     dict(HOTEL_SET, **{"가운": 2}),
-        }
-        for cname, prof in profiles.items():
-            crow = con.execute("SELECT id, rooms FROM clients WHERE name=?", (cname,)).fetchone()
-            occupied = int(crow["rooms"] * 0.7)          # 가동률 70% 가정
-            for iname, per_room in prof.items():
-                con.execute("INSERT INTO client_items VALUES (?,?,?)",
-                            (crow["id"], item_id[iname], int(occupied * per_room)))
-        # 표준 세트가 안 맞는 두 곳은 손으로 (요양병원 = 환자복 중심, 웨딩홀 = 테이블 리넨 중심)
-        py_id = con.execute("SELECT id FROM clients WHERE name='강북성심요양병원'").fetchone()["id"]
-        for iname, qty in {"환자복": 210, "시트": 100, "베개피": 100, "담요": 30, "중타올": 150}.items():
-            con.execute("INSERT INTO client_items VALUES (?,?,?)", (py_id, item_id[iname], qty))
-        wd_id = con.execute("SELECT id FROM clients WHERE name='의정부 그랜드컨벤션'").fetchone()["id"]
-        for iname, qty in {"테이블보": 120, "냅킨": 700, "중타올": 60}.items():
-            con.execute("INSERT INTO client_items VALUES (?,?,?)", (wd_id, item_id[iname], qty))
-
-        def sid(name):
-            """이름으로 담당자 id 찾기 (예시 티켓 배정용)."""
-            return con.execute("SELECT id FROM staff WHERE name=?", (name,)).fetchone()[0]
-
-        def add_ticket(client, type_, sev, content, channel, assignee, created, acts, status, done=None):
-            """예시 티켓 한 건 + 조치 일지 + 사진.
-            acts = [(누가, 종류, 내용, 시각, [사진 파일명들])]. 사진은 make_demo_photos.py 가 만든 데모 이미지."""
-            tid = insert_id(con, """INSERT INTO complaints
-                (client_id, type, severity, content, channel, assignee_id, status, created_at, done_at)
-                VALUES (?,?,?,?,?,?,?,?,?)""",
-                (client, type_, sev, content, channel, sid(assignee), status, created, done))
-            for actor, kind, text, at, photo_files in acts:
-                aid = insert_id(con, """INSERT INTO actions (complaint_id, actor, kind, content, created_at)
-                                        VALUES (?,?,?,?,?)""", (tid, actor, kind, text, at))
-                for ph in photo_files:
-                    con.execute("INSERT INTO photos (action_id, filename) VALUES (?,?)", (aid, ph))
-
-        # ── 예시 티켓 — 두 공장 모두, 여러 날짜에 걸쳐 (완료 이력이 있어야 평균 처리 시간이 산다) ──
-        today = now()[:10]
-        add_ticket(1, "delivery", "urgent", "어제 납품분에 다른 업체 수건이 섞여 왔음. 회수 요청.",
-                   "전화", "박기사", f"{today} 08:40", [
-            ("사장", "register", "그랜드한강호텔 지배인 전화 접수", f"{today} 08:40", ["demo_towels_mixed.png"]),
-            ("사장", "instruct", "오늘 수거 때 섞인 수건 회수해 올 것", f"{today} 08:42", []),
-        ], "new")
-        add_ticket(6, "quality", "normal", "환자복 소매 얼룩이 안 빠진 채 납품됨 (3벌)",
-                   "문자", "김세탁", "2026-08-06 14:10", [
-            ("사장", "register", "요양병원 문자 접수, 사진 받음", "2026-08-06 14:10", ["demo_sleeve_stain.png"]),
-            ("김세탁", "work", "재세탁 진행. 녹 계열 얼룩이라 전용 처리 필요", "2026-08-06 16:30", []),
-        ], "working")
-        add_ticket(7, "quality", "normal", "수건 5장이 누렇게 변색된 채 왔다고 교환 요청",
-                   "전화", "이다림", "2026-08-05 10:20", [
-            ("사장", "register", "베뉴모텔 사장님 전화", "2026-08-05 10:20", ["demo_towel_yellow.png"]),
-            ("이다림", "ack", "지시 확인", "2026-08-05 10:55", []),
-            ("이다림", "work", "재세탁 후 검수 — 변색 심한 3장은 폐기, 새 수건으로 교체", "2026-08-05 14:20", []),
-            ("이다림", "done", "교체분 당일 배송 완료", "2026-08-05 15:40", []),
-        ], "done", "2026-08-05 15:40")
-        add_ticket(9, "quality", "urgent", "토요일 행사분 테이블보에 와인 얼룩 12장이 그대로 납품됨",
-                   "전화", "장미란", f"{today} 09:15", [
-            ("사장", "register", "웨딩홀 매니저 전화 — 다음 행사가 금요일이라 급함", f"{today} 09:15", ["demo_tablecloth_wine.png"]),
-            ("장미란", "ack", "지시 확인", f"{today} 09:40", []),
-            ("장미란", "work", "전량 회수해 얼룩 전용 재세탁 돌리는 중", f"{today} 11:05", []),
-        ], "working")
-        add_ticket(10, "delivery", "normal", "가운 40장 수량 부족 — 주말 투숙 앞두고 보충 요청",
-                   "문자", "나운전", f"{today} 10:30", [
-            ("사장", "register", "리조트 프런트 문자", f"{today} 10:30", []),
-            ("사장", "instruct", "내일 오전 배송 때 가운 40장 추가 적재", f"{today} 10:33", []),
-            ("나운전", "ack", "지시 확인", f"{today} 12:02", []),
-        ], "acked")
-        add_ticket(10, "quality", "normal", "스파 타월에서 꿉꿉한 냄새가 난다는 고객 불만",
-                   "전화", "윤정례", "2026-08-04 09:00", [
-            ("사장", "register", "리조트 지배인 전화", "2026-08-04 09:00", ["demo_towel_mold.png"]),
-            ("윤정례", "work", "건조 공정 점검 — 건조기 2호기 온도 저하 발견", "2026-08-04 13:30", []),
-            ("윤정례", "done", "재세탁·완전 건조 후 재납품. 건조기 수리 완료", "2026-08-04 17:10", []),
-        ], "done", "2026-08-04 17:10")
-        add_ticket(5, "etc", "normal", "수거 방문을 오전 7시 이전으로 바꿔달라는 요청",
-                   "전화", "최배송", "2026-08-06 09:50", [
-            ("사장", "register", "스테이노원 프런트 전화", "2026-08-06 09:50", []),
-            ("사장", "instruct", "2호차 노선 순서 조정 검토", "2026-08-06 09:55", []),
-        ], "new")
-        # ── 추가분: 여러 인력·여러 날짜에 걸친 이력 (인력별 배정 화면이 의미 있으려면 골고루 필요) ──
-        add_ticket(2, "quality", "normal", "가운 허리끈 6개가 세탁 후 사라졌다는 항의",
-                   "전화", "문채원", "2026-08-02 11:20", [
-            ("사장", "register", "리버사이드 하우스키핑 전화", "2026-08-02 11:20", []),
-            ("문채원", "work", "포장 라인 점검 — 끈 분리 세탁분이 별도 망에 있었음", "2026-08-02 14:00", []),
-            ("문채원", "done", "6개 전량 찾아 당일 재납품", "2026-08-02 16:30", []),
-        ], "done", "2026-08-02 16:30")
-        add_ticket(3, "delivery", "normal", "납품이 이틀 연속 오전 11시를 넘겼다는 항의",
-                   "문자", "정노선", "2026-08-03 09:10", [
-            ("사장", "register", "엠스테이션 지배인 문자", "2026-08-03 09:10", []),
-            ("정노선", "ack", "지시 확인", "2026-08-03 09:30", []),
-            ("정노선", "done", "3호차 출발 순서를 바꿔 9시 30분 납품으로 조정", "2026-08-03 13:00", []),
-        ], "done", "2026-08-03 13:00")
-        add_ticket(4, "quality", "normal", "시트 구김이 심해 다시 다려달라는 요청 (20장)",
-                   "전화", "한가람", "2026-08-06 15:40", [
-            ("사장", "register", "호텔더블유 프런트 전화", "2026-08-06 15:40", []),
-            ("한가람", "ack", "지시 확인", "2026-08-06 16:00", []),
-            ("한가람", "work", "롤러 온도 재설정 후 재다림 중", "2026-08-06 17:10", []),
-        ], "working")
-        add_ticket(8, "delivery", "urgent", "오늘 수거를 안 왔다는 연락 — 세탁물이 쌓여 있음",
-                   "전화", "최배송", "2026-08-01 17:30", [
-            ("사장", "register", "클라우드모텔 사장님 전화", "2026-08-01 17:30", []),
-            ("최배송", "ack", "지시 확인 — 노선 착오였음", "2026-08-01 17:45", []),
-            ("최배송", "done", "당일 저녁 수거 완료, 다음날 우선 납품", "2026-08-01 19:20", []),
-        ], "done", "2026-08-01 19:20")
-        add_ticket(5, "quality", "normal", "베개피 30장이 수량 부족으로 납품됨",
-                   "문자", "박정리", "2026-07-31 10:00", [
-            ("사장", "register", "스테이노원 문자", "2026-07-31 10:00", []),
-            ("박정리", "work", "포장 대수 대조 — 다른 호텔 묶음에 섞여 나간 것 확인", "2026-07-31 11:30", []),
-            ("박정리", "done", "30장 회수·재납품, 포장 검수 절차에 수량 체크 추가", "2026-07-31 15:00", []),
-        ], "done", "2026-07-31 15:00")
-        add_ticket(1, "etc", "normal", "빈 세탁망 40개를 다음 수거 때 돌려달라는 요청",
-                   "전화", "한기동", f"{today} 11:50", [
-            ("사장", "register", "그랜드한강 하우스키핑 전화", f"{today} 11:50", []),
-            ("사장", "instruct", "4호차 내일 적재분에 세탁망 40개 포함", f"{today} 11:52", []),
-        ], "new")
-        add_ticket(9, "delivery", "urgent", "금요일 행사가 목요일로 앞당겨짐 — 납품 하루 앞당겨달라",
-                   "전화", "나운전", "2026-08-06 16:20", [
-            ("사장", "register", "웨딩홀 매니저 전화", "2026-08-06 16:20", []),
-            ("나운전", "ack", "지시 확인", "2026-08-06 16:40", []),
-            ("나운전", "work", "목요일 오전 배송으로 일정 재편성 중", "2026-08-06 17:30", []),
-        ], "working")
-        add_ticket(10, "quality", "normal", "침대패드 4장에 누런 얼룩 — 교체 요청",
-                   "문자", "고아라", "2026-08-05 13:10", [
-            ("사장", "register", "리조트 하우스키핑 문자", "2026-08-05 13:10", ["demo_towel_yellow.png"]),
-            ("고아라", "work", "재세탁 시험 — 오래된 얼룩이라 표백 처리", "2026-08-05 15:00", []),
-            ("고아라", "done", "2장 복원, 2장은 폐기 후 신품 교체", "2026-08-05 18:20", []),
-        ], "done", "2026-08-05 18:20")
-        add_ticket(9, "quality", "normal", "냅킨 100장 다림 상태 불량 — 행사용으로 못 쓴다는 항의",
-                   "전화", "전상국", "2026-08-02 10:40", [
-            ("사장", "register", "웨딩홀 매니저 전화", "2026-08-02 10:40", []),
-            ("전상국", "work", "재다림 진행", "2026-08-02 13:00", []),
-            ("전상국", "done", "전량 재다림 후 당일 납품", "2026-08-02 16:00", []),
-        ], "done", "2026-08-02 16:00")
+        seed_demo(con)
     con.commit()
     con.close()
 
@@ -1332,3 +1337,61 @@ def kakao_disconnect(request: Request):
     con.execute("DELETE FROM settings WHERE key LIKE 'kakao_%'")
     con.commit(); con.close()
     return RedirectResponse("/", status_code=303)
+
+
+# ── 데모 데이터 초기화 (2026-08-11) ──────────────────────────────────
+# 배포 데모는 면접관·방문자가 시험 삼아 남긴 클레임·조치가 Neon Postgres에 그대로 쌓인다.
+# 시연 전에 처음 상태(예시 데이터)로 되돌릴 버튼이 필요해서 만든다. 사장 전용 — 함부로 지우면
+# 다른 방문자가 만든 기록이 통째로 사라지므로 role 가드를 GET·POST 둘 다에 건다.
+TABLES_TO_WIPE = ("photos", "actions", "complaints", "chat_msgs", "chats",
+                  "client_items", "items", "staff", "clients", "factories")
+# ⚠️ settings 표(카카오 토큰)는 이 목록에 없다 — 지우면 배포 데모의 카카오 알림 연동이
+#    끊겨 버리는데, 그건 이 버튼이 할 일이 아니다(연동 해제는 /kakao/disconnect 몫).
+
+
+@app.get("/admin/reset")
+def admin_reset_form(request: Request):
+    """데모 초기화 확인 화면(사장 전용) — 누르면 끝인 버튼이 아니라, 지금 쌓인 규모를 먼저
+    보여주고 한 번 더 확인시키는 화면이다(되돌릴 수 없는 작업이라 JS confirm 대신 화면 자체를 관문으로 둔다)."""
+    user = require_user(request)
+    if user is None or user["role"] != "owner":
+        return RedirectResponse("/", status_code=303)
+    con = db()
+    n_complaints = con.execute("SELECT COUNT(*) FROM complaints").fetchone()[0]
+    n_actions = con.execute("SELECT COUNT(*) FROM actions").fetchone()[0]
+    n_chats = con.execute("SELECT COUNT(*) FROM chats").fetchone()[0]
+    con.close()
+    return templates.TemplateResponse(request, "reset.html", {
+        "n_complaints": n_complaints, "n_actions": n_actions, "n_chats": n_chats,
+    })
+
+
+@app.post("/admin/reset")
+def admin_reset_submit(request: Request):
+    """데모 초기화 실행(사장 전용) — 쌓인 데이터를 전부 비우고 최초 부팅 때와 같은 예시 데이터로 되돌린다."""
+    user = require_user(request)
+    if user is None or user["role"] != "owner":
+        return RedirectResponse("/", status_code=303)
+    con = db()
+    if IS_PG:
+        # 자식→부모 순서를 일일이 고민할 필요 없이 한 문장 — RESTART IDENTITY로 자동 id도
+        # 다시 1부터 매겨진다. 이게 필요한 이유: seed_demo() 안의 add_ticket()이 "거래처 3번"처럼
+        # 자동 생성된 id 순서에 기대어 예시 티켓을 배정하므로, id가 이어서 커지면 배정이 어긋난다.
+        con.execute("TRUNCATE " + ", ".join(TABLES_TO_WIPE) + " RESTART IDENTITY CASCADE")
+    else:
+        # SQLite에는 TRUNCATE가 없다 — 자식 표부터 순서대로 DELETE.
+        # SQLite의 id는 INTEGER PRIMARY KEY(AUTOINCREMENT 아님)라, 표를 통째로 비우면
+        # 다음 INSERT가 다시 1부터 받는다 — 그래서 위 목록과 같은 자식→부모 순서만 지키면 된다.
+        for t in TABLES_TO_WIPE:
+            con.execute(f"DELETE FROM {t}")
+    seed_demo(con)              # 최초 부팅 때와 같은 함수 — 예시 데이터를 다시 심는다
+    con.commit(); con.close()
+    # staff도 지웠다 다시 심지만, 위 초기화로 id가 지우기 전과 같은 순서(사장=1, 강만석=2, …)로
+    # 다시 매겨지므로 로그인 쿠키(uid)가 가리키던 번호가 여전히 같은 사람을 가리킨다 —
+    # 초기화 뒤에도 다시 로그인할 필요가 없다.
+    # 업로드 폴더 정리: 방문자가 올린 사진만 지운다. 데모 사진(make_demo_photos.py 생성분)은
+    # 전부 "demo_" 접두사라 이름으로 구분된다 — 그 사진들은 예시 티켓이 다시 가리키므로 남겨야 한다.
+    for f in UPLOAD_DIR.iterdir():
+        if f.is_file() and not f.name.startswith("demo_"):
+            f.unlink()
+    return RedirectResponse("/?reset=1", status_code=303)

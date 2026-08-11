@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}데모 데이터 초기화 — 세탁 클레임{% endblock %}
+{% block body %}
+<h1>데모 데이터 초기화</h1>
+{# JS confirm 대화상자를 안 쓴다 — 이 화면 자체가 확인 단계다. 버튼을 누르기 전에
+   지금 지워질 규모를 숫자로 보여줘서, "몇 건이나 날아가는지 모르고 누른다"를 막는다. #}
+<div class="notebox">
+  클레임 <b>{{ n_complaints }}건</b> · 조치 <b>{{ n_actions }}건</b> · 상담 대화 <b>{{ n_chats }}개</b>가
+  모두 지워지고 처음의 예시 데이터로 돌아갑니다. 카톡 알림 연동은 유지됩니다. 되돌릴 수 없습니다.
+</div>
+
+<form class="box" method="post" action="/admin/reset">
+  {# 빨간 계열 확인 버튼 — 긴급 전용색(--urgent)을 여기서만 예외로 빌린다(되돌릴 수 없는 조작이라
+     실수 클릭에 값을 크게 매겨야 한다). 취소는 평범한 링크로 — 아무 조작도 안 남기는 쪽이 기본값. #}
+  <button type="submit" style="background:var(--urgent)">초기화 실행</button>
+</form>
+<p><a href="/">← 취소하고 대시보드로</a></p>
+{% endblock %}
