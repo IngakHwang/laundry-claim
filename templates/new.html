@@ -1,52 +1,94 @@
 {% extends "base.html" %}
+{% import "_icons.html" as ic %}
 {% block title %}클레임 접수 — 세탁 클레임{% endblock %}
 {% block body %}
 <h1>클레임 접수</h1>
 <form class="box" method="post" action="/new" enctype="multipart/form-data">
-  <label>거래처</label>
-  <select name="client_id" required>
+  <label for="client_id">거래처</label>
+  {# option마다 data-factory를 심어 아래 JS가 "이 거래처는 몇 번 공장 소속인지"를 읽게 한다.
+     sel_client_id는 거래처 상세의 「이 거래처로 접수」 딥링크(/new?client_id=)로 왔을 때만 값이 있다
+     — 그 경우 해당 옵션에 selected를 줘 매번 목록에서 다시 찾지 않게 한다(2026-08-11 UI 수정 #5). #}
+  <select name="client_id" id="client_id" required>
     {% for factory_name, items in clients|groupby('factory_name') %}
     <optgroup label="{{ factory_name }}">
-      {% for c in items %}<option value="{{ c.id }}">{{ c.name }} ({{ c.biz_type }}{% if c.rooms %} · {{ c.rooms }}실{% endif %})</option>{% endfor %}
+      {% for c in items %}<option value="{{ c.id }}" data-factory="{{ c.factory_id or '' }}"
+        {{ 'selected' if sel_client_id and c.id == sel_client_id }}>{{ c.name }} ({{ c.biz_type }}{% if c.rooms %} · {{ c.rooms }}실{% endif %})</option>{% endfor %}
     </optgroup>
     {% endfor %}
   </select>
 
-  <label>유형</label>
-  <select name="type">
+  <label for="type">유형</label>
+  <select name="type" id="type">
     {% for code, label in TYPE_LABEL.items() %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
   </select>
 
-  <label>심각도</label>
-  <select name="severity">
+  <label for="severity">심각도</label>
+  <select name="severity" id="severity">
     <option value="normal">보통</option>
     <option value="urgent">긴급</option>
   </select>
 
-  <label>접수 경로</label>
-  <select name="channel">
+  <label for="channel">접수 경로</label>
+  <select name="channel" id="channel">
     <option>전화</option><option>문자</option><option>방문</option>
   </select>
 
-  <label>내용 (들은 그대로)</label>
-  <textarea name="content" required placeholder="예: 어제 납품분에 다른 업체 수건이 섞여 왔음"></textarea>
+  <label for="content">내용 (들은 그대로)</label>
+  <textarea name="content" id="content" required placeholder="예: 어제 납품분에 다른 업체 수건이 섞여 왔음"></textarea>
 
-  <label>담당자 배정</label>
-  <select name="assignee_id" required>
+  <label for="assignee_id">담당자 배정</label>
+  {# option마다 data-factory — 거래처와 다른 공장 소속 담당자를 JS가 숨기는 기준이 된다.
+     본사(factory_id 없음) 담당자는 data-factory가 빈 값이라 아래 JS 규칙에서 항상 보인다. #}
+  <select name="assignee_id" id="assignee_id" required>
     {% for factory_name, items in staff|groupby('factory_name') %}
     <optgroup label="{{ factory_name }}">
-      {% for s in items %}<option value="{{ s.id }}">[{{ ROLE_LABEL[s.role] }}] {{ s.name }}</option>{% endfor %}
+      {% for s in items %}<option value="{{ s.id }}" data-factory="{{ s.factory_id or '' }}">[{{ ROLE_LABEL[s.role] }}] {{ s.name }}</option>{% endfor %}
     </optgroup>
     {% endfor %}
   </select>
 
-  <label>사진 (선택, 여러 장 가능) — 촬영하거나 앨범에서 고릅니다</label>
-  {# capture 속성은 쓰지 않는다 — 카메라를 강제해 갤러리 선택이 막힌다(점검 지적) #}
-  <input type="file" name="photos" accept="image/*" multiple>
+  <label class="optional" for="photos">사진 (선택, 여러 장 가능) — 촬영하거나 앨범에서 고릅니다</label>
+  {# capture 속성은 쓰지 않는다 — 카메라를 강제해 갤러리 선택이 막힌다(점검 지적)
+     input은 화면에서 숨기고(file-input) 카메라 아이콘 라벨(file-btn)이 같은 id를 for로 가리켜
+     대신 열게 한다 — 기존 미리보기 change 리스너(base.html)는 input 자체를 보므로 그대로 동작한다
+     (2026-08-11 UI 수정 #10). #}
+  <input type="file" name="photos" id="photos" accept="image/*" multiple class="file-input">
+  <label class="file-btn" for="photos">{{ ic.i('camera', 15) }} 사진 추가</label>
 
-  <label>담당자에게 지시 (선택)</label>
-  <textarea name="instruction" placeholder="예: 오늘 수거 때 회수해 올 것"></textarea>
+  <label class="optional" for="instruction">담당자에게 지시 (선택)</label>
+  <textarea name="instruction" id="instruction" placeholder="예: 오늘 수거 때 회수해 올 것"></textarea>
 
   <button type="submit">접수하기</button>
 </form>
+
+<script>
+// 거래처↔담당자 공장 연동 — 다른 공장 거래처를 고른 채로 남의 공장 담당자에게 배정하는
+// 실수를 막는다(2026-08-11 UI 수정 #7). 서버(new_submit)도 같은 규칙을 한 번 더 확인한다
+// (JS가 꺼졌거나 폼이 조작된 요청 대비 — 화면의 편의와 서버의 안전을 같이 둔다).
+(function () {
+  var clientSel = document.getElementById('client_id');
+  var staffSel = document.getElementById('assignee_id');
+  if (!clientSel || !staffSel) return;
+  function syncStaff() {
+    var opt = clientSel.options[clientSel.selectedIndex];
+    var fid = opt ? opt.dataset.factory : '';
+    var curOpt = staffSel.options[staffSel.selectedIndex];
+    var curHidden = false;
+    var firstVisible = null;
+    Array.prototype.forEach.call(staffSel.options, function (o) {
+      // 공장 무소속(본사, data-factory 빈 값)은 어느 거래처를 골라도 항상 후보로 남는다
+      var sameFactory = !o.dataset.factory || o.dataset.factory === fid;
+      o.hidden = !sameFactory;
+      o.disabled = !sameFactory;
+      if (sameFactory && !firstVisible) firstVisible = o;
+      if (o === curOpt && !sameFactory) curHidden = true;
+    });
+    if (curHidden && firstVisible) {
+      staffSel.value = firstVisible.value;   // 지금 고른 담당자가 숨겨졌으면 같은 공장 첫 담당자로
+    }
+  }
+  clientSel.addEventListener('change', syncStaff);
+  syncStaff();   // 딥링크(/new?client_id=)로 거래처가 미리 선택된 채 열렸을 때도 바로 맞춘다
+})();
+</script>
 {% endblock %}

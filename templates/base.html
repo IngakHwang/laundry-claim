@@ -87,13 +87,15 @@ main{max-width:820px; margin:0 auto; padding:20px 16px;}
      뒤에 있는 「내 클레임」은 존재 자체를 모른다 (점검 최다 지적: 리뷰어 4명)
      두 줄이 상하로 붙으므로 패딩·간격을 키워 오탭을 막는다(재검증 지적) */
   aside.side{width:auto; display:flex; flex-wrap:wrap; padding:8px; gap:4px; align-items:center; border-right:0; border-bottom:1px solid var(--border);}
-  .side a{white-space:nowrap; margin-bottom:0; padding:10px 12px;}
+  /* 터치 목표 44px(모바일 접근성 최소 기준, 재검증 지적 #11) — padding만으로는 짧은 라벨(로그아웃 등)이
+     여전히 작을 수 있어 min-height도 같이 건다. display:flex로 텍스트를 세로 중앙에 맞춘다. */
+  .side a{white-space:nowrap; margin-bottom:0; padding:14px 12px; min-height:44px; display:flex; align-items:center;}
   .side .brand{margin:0 6px 0 0;}
-  .side a.primary{margin:0 6px 0 0; padding:9px 12px;}
+  .side a.primary{margin:0 6px 0 0; padding:14px 12px; min-height:44px; display:flex; align-items:center; justify-content:center;}
   .side details{display:contents;}
   .side summary{display:none;}
   .side a.recent{display:none;}   /* 폰에서는 최근 목록 생략 — 공간이 없다 */
-  .topbar a.meta{padding:10px 6px;}               /* 로그아웃도 손가락 크기로 */
+  .topbar a.meta{padding:14px 6px; min-height:44px; display:inline-flex; align-items:center;}   /* 로그아웃도 손가락 크기로 */
   button.mv{min-height:44px; font-size:.95rem;}   /* 한 손 엄지의 최소 터치 크기(44px) — 이 버튼이 폰에서 상태를 바꾸는 유일한 수단 */
 }
 /* 벽걸이 모니터 모드(/?tv=1) — 몇 미터 밖에서 읽히게 전체 확대 + 조작 UI 제거.
@@ -107,11 +109,17 @@ h2{font-size:1.05rem; margin:16px 0 8px;}
 .card{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:10px; display:block; color:inherit; text-decoration:none; box-shadow:var(--shadow);}
 a.card:hover{border-color:var(--brand); box-shadow:var(--shadow-hover);}
 .card.urgent{border-left:5px solid var(--urgent);}
-.badge{display:inline-block; border-radius:999px; padding:1px 10px; font-size:.78rem; font-weight:600; margin-right:6px;}
-.b-status-new{background:var(--st-new-bg); color:var(--st-new-tx);}
-.b-status-acked{background:var(--st-acked-bg); color:var(--st-acked-tx);}
-.b-status-working{background:var(--st-working-bg); color:var(--st-working-tx);}
-.b-status-done{background:var(--st-done-bg); color:var(--st-done-tx);}
+/* 미완료를 든 담당자 카드 강조(me_select.html) — :has() 없이 서버에서 클래스만 분기해
+   구형 브라우저에서도 똑같이 보이게 한다(2026-08-11 UI 수정 #21) */
+.card.has-open{border-left:3px solid var(--brand);}
+/* 배지 테두리 — 색으로만 상태를 구분하면 색약 사용자에게 확인됨/처리중이 비슷하게 보인다.
+   테두리를 상태 글자색(-tx)으로 둘러 형태 신호를 하나 더 준다(2026-08-11 UI 수정 #17) */
+.badge{display:inline-block; border-radius:999px; padding:1px 10px; font-size:.78rem; font-weight:600; margin-right:6px; border:1px solid transparent;}
+.badge.tiny{font-size:.65rem; padding:0 6px;}   /* 사이드바 최근 목록처럼 좁은 자리에 끼워 넣는 배지용 */
+.b-status-new{background:var(--st-new-bg); color:var(--st-new-tx); border-color:var(--st-new-tx);}
+.b-status-acked{background:var(--st-acked-bg); color:var(--st-acked-tx); border-color:var(--st-acked-tx);}
+.b-status-working{background:var(--st-working-bg); color:var(--st-working-tx); border-color:var(--st-working-tx);}
+.b-status-done{background:var(--st-done-bg); color:var(--st-done-tx); border-color:var(--st-done-tx);}
 .b-type{background:#ECEEF3; color:var(--sub);}
 .b-urgent{background:var(--urgent); color:#fff;}
 .b-count{background:var(--brand-soft); color:var(--brand-deep);}   /* 건수 배지 — 상태색(파랑=처리중)을 빌리면 축이 흐려져 전용색 */
@@ -132,12 +140,30 @@ a.stat:hover span{color:var(--brand);}
 .flash{box-shadow:0 0 0 3px rgba(100,85,240,.4); border-radius:10px; transition:box-shadow .3s;}
 form.box{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; box-shadow:var(--shadow);}
 label{display:block; margin:10px 0 4px; font-weight:600; font-size:.9rem;}
+/* "(선택)"이 붙은 라벨은 필수 입력과 눈으로 구분되게 옅게·덜 굵게 (2026-08-11 UI 수정 #9) */
+label.optional{color:var(--sub); font-weight:500;}
 input[type=text],select,textarea{width:100%; padding:9px; border:1px solid var(--line); border-radius:8px; font-size:1rem; font-family:inherit;}
 textarea{min-height:70px;}
 button{background:var(--brand); color:#fff; border:0; border-radius:8px; padding:11px 18px; font-size:1rem; font-weight:700; margin-top:12px; cursor:pointer; width:100%;}
 button.small{width:auto; padding:8px 14px; font-size:.9rem; margin-top:8px;}
+/* 로그인 화면 "전체 직원" 펼침 목록의 버튼만 손가락 크기로 — button.small은 다른 화면에서도
+   쓰이므로 전역으로 키우지 않고 이 목록에만 적용되는 선택자로 좁힌다(2026-08-11 UI 수정 #13) */
+.staff-roster button.small{min-height:44px;}
 /* 완료 처리 전용 보조 버튼 — 흰 바탕+완료색 테두리. 주 버튼(처리 보고)과 나란히 놓여도 헷갈리지 않게 */
 button.alt-done{background:var(--surface); color:var(--st-done-tx); border:2px solid var(--st-done); margin-top:8px;}
+/* 사진 첨부 버튼 — 기본 file input은 브라우저마다 못생겨서 숨기고, 카메라 아이콘 라벨을
+   button.small 톤으로 대신 세운다. label의 for=가 숨긴 input을 그대로 여는 것은 표준 동작이라
+   모던 브라우저에서 호환에 문제가 없다(2026-08-11 UI 수정 #10). */
+input.file-input{display:none;}
+label.file-btn{display:inline-flex; align-items:center; gap:6px; width:auto; background:var(--surface); color:var(--text);
+  border:1px solid var(--line); border-radius:8px; padding:8px 14px; font-size:.9rem; font-weight:600; cursor:pointer; margin:4px 0 0;}
+label.file-btn:hover{border-color:var(--brand); color:var(--brand-deep);}
+/* 「전체 이력 보기 →」같은 보조 이동 링크 — 손가락으로 누를 여유(패딩)를 준 전용 클래스
+   (.meta 자체를 건드리면 다른 화면의 촘촘한 메타 글자들까지 커진다, 2026-08-11 UI 수정 #14) */
+.hist-link{display:inline-block; padding:10px 4px;}
+/* 화면엔 안 보이지만 스크린리더는 읽는 텍스트 — 표준 정의(2026-08-11 UI 수정 #16) */
+.sr-only{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+  clip:rect(0,0,0,0); white-space:nowrap; border:0;}
 .timeline{list-style:none; padding:0; margin:0;}
 .timeline li{border-left:3px solid var(--line); padding:6px 0 6px 12px; margin-left:6px;}
 .timeline b{font-size:.9rem;}
@@ -146,12 +172,19 @@ button.alt-done{background:var(--surface); color:var(--st-done-tx); border:2px s
 .timeline li.move{font-size:.8rem; color:var(--sub); padding:3px 0 3px 12px; border-left-color:var(--border);}
 .timeline li.move b{font-size:.8rem; font-weight:600;}
 .timeline li.move .meta{display:inline; margin-left:6px;}
+/* 지시(instruct) 기록은 me.html의 노란 지시 박스(.instr)와 같은 톤으로 — 타임라인을 훑을 때도
+   "지금 뭘 해야 하는지"가 다른 기록들 사이에서 바로 눈에 띄어야 한다(2026-08-11 UI 수정 #19) */
+.timeline li.instr{background:#FFF9E8; border:1px solid #EAD9A0; border-left:3px solid #EAD9A0;
+  border-radius:8px; padding:8px 10px; margin:6px 0 6px 6px;}
 .instr{background:#FFF9E8; border:1px solid #EAD9A0; border-radius:8px; padding:8px 10px; margin-top:8px; font-size:.92rem;}
 img.photo{display:block; max-width:220px; max-height:220px; border-radius:8px; margin:6px 0; border:1px solid var(--line);}
 .pv-wrap{position:relative; display:inline-block; margin:8px 8px 0 0; vertical-align:top;}
 .pv-wrap img{margin:0; max-width:120px; max-height:120px;}
-.pv-del{position:absolute; top:-8px; right:-8px; width:24px; height:24px; padding:0; margin:0;
-  border-radius:50%; background:var(--urgent); color:#fff; font-size:.8rem; line-height:1;}
+/* ✕ 삭제 버튼 40×40 — 24px는 손가락으로 정확히 누르기 어려웠다(재검증 지적 #12).
+   커진 만큼 위치를 -12px로 더 바깥에 둬 사진과 안 겹치게, 아이콘 자체(font-size)는 그대로 둔다. */
+.pv-del{position:absolute; top:-12px; right:-12px; width:40px; height:40px; padding:0; margin:0;
+  border-radius:50%; background:var(--urgent); color:#fff; font-size:.8rem; line-height:1;
+  display:flex; align-items:center; justify-content:center;}
 /* 칸반 현황판 — 상태별 열, 카드 끌어놓기.
    본문 폭(820px)에 가두지 않고 화면 폭을 다 쓴다(풀블리드) — 좌우 스크롤 없이 열 4개가 들어가게.
    계산: 화면 폭 - 사이드바 216px - 좌우 여백. 본문보다 좁아지는 화면에선 100%로 돌아간다. */
@@ -252,7 +285,8 @@ details.fold > *:not(summary){margin-top:10px;}
   </details>
   <details open><summary>최근 업데이트</summary>
     {% for t in recent_tickets(user) %}
-    <a class="recent" href="/c/{{ t.id }}"><span class="dot {{ 'red' if t.severity == 'urgent' }}"></span>#{{ t.id }} {{ t.client_name }}</a>
+    {# 긴급을 점(색) 하나로만 표시하면 색약 사용자에게 안 보인다 — 작은 글자 배지를 더한다(UI 수정 #18) #}
+    <a class="recent" href="/c/{{ t.id }}"><span class="dot {{ 'red' if t.severity == 'urgent' }}"></span>{% if t.severity == 'urgent' %}<span class="badge b-urgent tiny">긴급</span>{% endif %}#{{ t.id }} {{ t.client_name }}</a>
     {% else %}
     <a class="recent">미완료 없음</a>
     {% endfor %}
@@ -263,7 +297,7 @@ details.fold > *:not(summary){margin-top:10px;}
 <div class="topbar">
   {% if user %}
   <form class="search" action="/search" method="get">
-    <input type="search" name="q" placeholder="클레임 검색 — 내용·거래처 이름" value="{{ request.query_params.get('q', '') }}">
+    <input type="search" name="q" placeholder="클레임 검색 — 내용·거래처 이름" aria-label="클레임 검색 — 내용·거래처 이름" value="{{ request.query_params.get('q', '') }}">
   </form>
   <span class="avatar" title="{{ user.name }}">{{ user.name[:2] }}</span>
   <a class="meta" href="/logout">로그아웃</a>

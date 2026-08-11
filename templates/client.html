@@ -4,16 +4,14 @@
 {% block body %}
 <h1>{{ c.name }} <span class="badge b-type">{{ c.biz_type }}</span></h1>
 <p class="meta">{{ c.factory_name }} 담당 · {% if c.rooms %}객실(침상) {{ c.rooms }} · {% endif %}하루 약 {{ "{:,}".format(c.daily_kg) }}kg
-  · 취급 품목: {% for it in goods %}{{ it.name }} {{ "{:,}".format(it.daily_qty) }}장{{ " · " if not loop.last }}{% endfor %}</p>
+  · 취급 품목: {% for it in goods %}{{ it.name }} {{ "{:,}".format(it.daily_qty) }}장{{ " · " if not loop.last }}{% endfor %}
+  · <a href="/new?client_id={{ c.id }}">{{ ic.i('plus', 13) }} 이 거래처로 클레임 접수</a></p>
 {% if c.note %}<div class="instr">{{ ic.i('pin', 14) }} 상시 특이사항: {{ c.note }}</div>{% endif %}
 
 <div class="stats">
   <a class="stat" href="#board-top"><b>{{ stats.total }}</b><span>누적 클레임 ↓</span></a>
   <a class="stat" href="#sec-open"><b>{{ open_tickets|length }}</b><span>진행 중 ↓</span></a>
   <a class="stat" href="#sec-done"><b>{{ stats.avg_hours if stats.avg_hours is not none else "—" }}</b><span>평균 처리(시간) ↓</span></a>
-  <span class="stat"><b style="font-size:.95rem; padding-top:6px">
-    {% for row in by_type %}{{ TYPE_LABEL[row.type] }} {{ row.n }}{{ " · " if not loop.last }}{% else %}—{% endfor %}
-  </b><span>유형별</span></span>
 </div>
 
 <h2 id="board-top">이 업체의 클레임 현황판</h2>
@@ -32,6 +30,19 @@
 {% else %}
 <p class="meta">진행 중인 클레임이 없습니다.</p>
 {% endfor %}
+</details>
+
+{# 지표 타일 4번째 자리에 있던 "유형별"이 인라인 font-size로 리듬을 깨서, 대시보드의
+   "유형별 누적" 패턴처럼 접이 섹션의 칩 목록으로 옮겼다(2026-08-11 UI 수정 #3). #}
+<details class="fold">
+<summary>유형별 누적</summary>
+<p>
+{% for row in by_type %}
+  <span class="badge b-type">{{ TYPE_LABEL[row.type] }} {{ row.n }}건</span>
+{% else %}
+  <span class="meta">아직 없음</span>
+{% endfor %}
+</p>
 </details>
 
 <details class="fold" id="sec-done">

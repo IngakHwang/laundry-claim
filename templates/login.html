@@ -24,7 +24,9 @@
 </form>
 {% endfor %}
 
-<details class="fold">
+{# staff-roster — base.html의 .staff-roster button.small{min-height:44px} 선택자가 이 목록에만
+   걸리도록 스코프를 준다(2026-08-11 UI 수정 #13, 다른 화면의 button.small은 그대로 둔다) #}
+<details class="fold staff-roster">
 <summary>전체 직원으로 로그인 ({{ staff|length }}명)</summary>
 {% for factory_name, items in staff|groupby('factory_name') %}
 <h2>{{ factory_name }}</h2>

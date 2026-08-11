@@ -1,11 +1,12 @@
 {% import "_icons.html" as ic %}
-{# 칸반 현황판 부품 — 대시보드 상단과 /board 화면이 같이 쓴다. 필요한 재료: cols, days_old, photo_n #}
+{# 칸반 현황판 부품 — 대시보드 상단과 거래처 상세(client.html)가 같이 쓴다. 필요한 재료: cols, days_old, photo_n
+   (예전엔 전용 화면 /board도 이 부품을 썼으나, 대시보드 상단 칸반과 완전히 중복이라 없앴다 — 2026-08-11) #}
 <div class="board">
   {% for status, tickets in cols.items() %}
   <div class="col s-{{ status }}" data-status="{{ status }}" id="col-{{ status }}">
     <h3>{{ STATUS_LABEL[status] }} <span class="cnt">{{ tickets|length }}</span></h3>
     <p class="colsub">{{ {"new": "담당자가 아직 확인 안 함", "acked": "담당자가 봤음 — 착수 전",
-                         "working": "처리 진행 중", "done": "끝남 — 최근 8건까지 표시"}[status] }}</p>
+                         "working": "처리 진행 중", "done": "끝남 — 최근 5건까지 표시"}[status] }}</p>
     {% for t in tickets %}
     {# 카드 = 「상세로 가는 링크」와 「이동 버튼」을 분리한 상자.
        버튼을 링크 안에 겹치면 엄지가 빗나갈 때 상태 변경 대신 화면 이동이 일어난다(점검 지적) #}
@@ -20,7 +21,8 @@
           <span class="badge b-type">{{ TYPE_LABEL[t.type] }}</span>
           {{ ic.i('factory', 13) }} {{ t.factory_name.split(' ')[0] if t.factory_name else "?" }}
           · {{ ic.i('user', 13) }} <b>{{ t.assignee_name or "미배정" }}</b>
-          {% if photo_n.get(t.id) %} · {{ ic.i('camera', 13) }} {{ photo_n[t.id] }}{% endif %}
+          {# 카메라 아이콘+숫자는 시각 정보라 스크린리더용 뜻풀이를 aria-label로 붙인다(UI 수정 #16) #}
+          {% if photo_n.get(t.id) %} · <span aria-label="사진 {{ photo_n[t.id] }}장">{{ ic.i('camera', 13) }} {{ photo_n[t.id] }}</span>{% endif %}
           {% if status != 'done' %} · {{ days_old[t.id] }}일째{% endif %}
         </div>
       </a>

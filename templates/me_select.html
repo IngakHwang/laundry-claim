@@ -9,8 +9,10 @@
 {% for factory_name, items in staff|groupby('factory_name') %}
 <h2>{{ factory_name }}</h2>
 {% for s in items %}
-<a class="card" href="/me/{{ s.id }}"><b>{{ s.name }}</b> <span class="badge b-type">{{ ROLE_LABEL[s.role] }}</span>
-  {% set n = open_n.get(s.id, 0) %}
+{% set n = open_n.get(s.id, 0) %}
+{# 미완료를 든 사람은 카드 왼쪽에 테두리를 줘 목록을 훑을 때 바로 눈에 띄게 한다.
+   :has() 선택자 대신 서버에서 클래스를 분기해 구형 브라우저에서도 똑같이 보인다(2026-08-11 UI 수정 #21). #}
+<a class="card {{ 'has-open' if n }}" href="/me/{{ s.id }}"><b>{{ s.name }}</b> <span class="badge b-type">{{ ROLE_LABEL[s.role] }}</span>
   {% if n %}
   <span class="badge b-count">미완료 {{ n }}건</span>
   {% if urgent_n.get(s.id) %}<span class="badge b-urgent">긴급 {{ urgent_n[s.id] }}</span>{% endif %}

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_icons.html" as ic %}
 {% block title %}#{{ t.id }} {{ t.client_name }} — 세탁 클레임{% endblock %}
 {% block body %}
 <h1>
@@ -16,8 +17,10 @@
 <h2>조치 일지 <span class="meta">(한 번 쓰면 안 고칩니다 — 시간순으로만 쌓입니다)</span></h2>
 <ul class="timeline">
   {% for a in acts %}
-  {# 상태 이동(move)은 작게 — 사람의 지시·처리 기록이 기계 로그에 묻히지 않게 #}
-  <li class="{{ 'move' if a.kind == 'move' }}">
+  {# 상태 이동(move)은 작게 — 사람의 지시·처리 기록이 기계 로그에 묻히지 않게.
+     지시(instruct)는 반대로 크게 — 노란 박스(.instr)로 "지금 뭘 해야 하는지"를 눈에 띄게 한다
+     (2026-08-11 UI 수정 #19). 두 조건이 동시에 참일 수 없어(move와 instruct는 다른 kind) 안전하다. #}
+  <li class="{{ 'move' if a.kind == 'move' else ('instr' if a.kind == 'instruct' else '') }}">
     <b>{{ KIND_LABEL[a.kind] }}</b> — {{ a.content }}
     {% if photo_map.get(a.id) %}
     <span class="photos">
@@ -32,19 +35,24 @@
 </ul>
 
 <h2>조치 추가</h2>
+{# 예전엔 "무엇을" select(기본값 지시)+제출 버튼 하나였다 — 무심코 그대로 제출하면
+   지시가 아닌 처리를 "지시"로 영구 기록하는 사고가 났다(append-only라 못 고친다).
+   me.html의 조치 폼처럼 종류별 제출 버튼(name=kind value=...)으로 바꿔, 누른 버튼 자체가
+   기록될 종류를 말하게 한다(2026-08-11 UI 수정 #6). 사장·공장장용이라 종류 4가지: 지시/처리 보고/완료/메모. #}
 <form class="box" method="post" action="/c/{{ t.id }}/action" enctype="multipart/form-data">
   <p class="meta">기록하는 사람: <b>{{ get_user(request).name }}</b> (로그인 기준 — 남 이름으로는 못 적습니다)</p>
-  <label>무엇을</label>
-  <select name="kind">
-    <option value="instruct">지시 (어떻게 해야 하는지)</option>
-    <option value="work">처리 보고 (어떻게 했는지) → 상태 '처리중'</option>
-    <option value="done">완료 처리 → 상태 '완료'</option>
-    <option value="note">메모</option>
-  </select>
-  <label>내용</label>
-  <textarea name="content" placeholder="지시·처리 내용"></textarea>
-  <label>사진 (선택, 여러 장 가능)</label>
-  <input type="file" name="photos" accept="image/*" multiple>
-  <button type="submit">기록하기</button>
+  <label for="content">내용</label>
+  <textarea name="content" id="content" placeholder="지시·처리 내용"></textarea>
+  <label class="optional" for="photos">사진 (선택, 여러 장 가능)</label>
+  <input type="file" name="photos" id="photos" accept="image/*" multiple class="file-input">
+  <label class="file-btn" for="photos">{{ ic.i('camera', 15) }} 사진 추가</label>
+
+  <button type="submit" name="kind" value="instruct">{{ ic.i('pin', 15) }} 지시 기록</button>
+  <button type="submit" name="kind" value="work">처리 보고 기록 → 상태 &#39;처리중&#39;</button>
+  {# 완료만은 한 번 묻는다 — me.html·현황판과 같은 원칙. append-only 일지에 오탭 완료가
+     영구히 남는 사고를 막는다(재검증 지적) #}
+  <button class="alt-done" type="submit" name="kind" value="done"
+          onclick="return confirm('이 클레임을 완료 처리할까요?')">{{ ic.i('check', 15) }} 완료 처리</button>
+  <button type="submit" name="kind" value="note">메모 남기기</button>
 </form>
 {% endblock %}

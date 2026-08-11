@@ -18,7 +18,10 @@
 <p class="meta">미완료 클레임이 없습니다.</p>
 {% endfor %}
 
-<h2>거래처 ({{ client_rows|length }}곳)</h2>
+{# 거래처·인력 목록은 기본으로 접어 둔다 — 공장 화면을 열자마자 봐야 할 것은 "현재 클레임"이고,
+   거래처·인력 명단은 필요할 때 펼쳐 보는 참고 자료다(2026-08-11 UI 수정 #2). #}
+<details class="fold">
+<summary>거래처 ({{ client_rows|length }}곳)</summary>
 {% for row in client_rows %}
 <a class="card" href="/client/{{ row.c.id }}">
   <b>{{ row.c.name }}</b> <span class="badge b-type">{{ row.c.biz_type }}</span>
@@ -30,8 +33,10 @@
   {% if row.c.note %}<div class="instr">{{ ic.i('pin', 14) }} 상시 특이사항: {{ row.c.note }}</div>{% endif %}
 </a>
 {% endfor %}
+</details>
 
-<h2>인력 ({{ staff|length }}명) <span class="meta">— 누르면 그 사람에게 배정된 것이 보입니다</span></h2>
+<details class="fold">
+<summary>인력 ({{ staff|length }}명) <span class="meta">— 누르면 그 사람에게 배정된 것이 보입니다</span></summary>
 {% for s in staff %}
 <a class="card" href="/me/{{ s.id }}">
   <b>{{ s.name }}</b> <span class="badge b-type">{{ ROLE_LABEL[s.role] }}</span>
@@ -39,4 +44,5 @@
   <span class="meta">{{ s.duty }} · {{ s.phone }} · {{ s.hired_at }} 입사</span>
 </a>
 {% endfor %}
+</details>
 {% endblock %}

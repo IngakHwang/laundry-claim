@@ -750,10 +750,11 @@ def dashboard(request: Request, factory: int | None = None):
     fargs: tuple = (factory,) if factory else ()
     open_tickets = con.execute(TICKET_SELECT + " WHERE c.status != 'done'" + fwhere + """
         ORDER BY (c.severity = 'urgent') DESC, c.created_at ASC""", fargs).fetchall()
-    # 최근 완료는 현황판의 완료 열과 같은 상한(8건) — 한 화면에서 완료 개수가
+    # 최근 완료는 현황판의 완료 열과 같은 상한(5건) — 한 화면에서 완료 개수가
     # 7·8·5로 제각각 보이던 문제를 기준 통일로 없앤다 (2026-08-10 UI 점검 지적)
+    # 완료 열이 길어 스크롤이 늘어지던 것을 8→5로 더 줄임(2026-08-11 UI 수정 21건 #4)
     done_recent = con.execute(TICKET_SELECT + " WHERE c.status = 'done'" + fwhere + """
-        ORDER BY c.done_at DESC LIMIT 8""", fargs).fetchall()
+        ORDER BY c.done_at DESC LIMIT 5""", fargs).fetchall()
     # 지표: 전화·문자가 절대 못 주는 숫자들 (공장 필터가 걸리면 그 공장 것만 센다)
     scoped = "FROM complaints c JOIN clients cl ON cl.id = c.client_id WHERE 1=1" + fwhere
     stats = {
@@ -801,7 +802,9 @@ def board_data(fid: int | None, client_id: int | None = None):
     photo_n = dict(con.execute("""SELECT a.complaint_id, COUNT(*) FROM photos p
         JOIN actions a ON a.id = p.action_id GROUP BY a.complaint_id""").fetchall())
     con.close()
-    # 상태별로 묶고, 완료 열은 최근 8건만 (완료가 쌓이면 열이 무한히 길어지므로)
+    # 상태별로 묶고, 완료 열은 최근 5건만 (완료가 쌓이면 열이 무한히 길어지므로 — 8건이던 것을
+    # 2026-08-11 UI 수정 21건 #4에서 5건으로 더 줄였다. done_recent와 상한을 맞춰야
+    # 한 화면(대시보드)에서 완료 개수가 다르게 보이는 일이 다시 생기지 않는다)
     cols = {s: [] for s in ("new", "acked", "working", "done")}
     today = datetime.now(KST).replace(tzinfo=None)   # created_at(한국 시간 문자열)과 같은 기준으로 경과일 계산
     days_old = {}
@@ -809,22 +812,16 @@ def board_data(fid: int | None, client_id: int | None = None):
         cols[t["status"]].append(t)
         created = datetime.strptime(t["created_at"], "%Y-%m-%d %H:%M")
         days_old[t["id"]] = (today - created).days
-    cols["done"] = sorted(cols["done"], key=lambda t: t["done_at"] or "", reverse=True)[:8]
+    cols["done"] = sorted(cols["done"], key=lambda t: t["done_at"] or "", reverse=True)[:5]
     return cols, days_old, photo_n
 
 
 @app.get("/board")
-def board(request: Request):
-    """칸반 보드 — 상태별 열(확인 대기→확인됨→처리중→완료)에 티켓이 카드로 붙는다.
-    지라(Jira)식 시각화: 일의 흐름이 왼쪽에서 오른쪽으로 흘러가는 게 한눈에 보인다."""
-    user = require_user(request)
-    if user is None:
-        return RedirectResponse("/login", status_code=303)
-    cols, days_old, photo_n = board_data(scope_of(user))
-    return templates.TemplateResponse(request, "board.html", {
-        "cols": cols, "days_old": days_old, "photo_n": photo_n,
-        "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL,
-    })
+def board():
+    """예전엔 칸반 보드 전용 화면이었다 — 지금은 대시보드(/) 상단 칸반과 내용이 완전히 겹쳐서
+    어디서도 링크되지 않는 고아 페이지가 됐다(2026-08-11 점검). 화면을 지우는 대신 옛 주소가
+    죽지 않게 대시보드로 돌려보내기만 한다(북마크·외부 링크가 있었을 가능성 대비)."""
+    return RedirectResponse("/", status_code=303)
 
 
 @app.post("/c/{ticket_id}/status")
@@ -910,13 +907,22 @@ def factory_detail(request: Request, factory_id: int):
     open_tickets = con.execute(TICKET_SELECT + """
         WHERE c.status != 'done' AND cl.factory_id = ?
         ORDER BY (c.severity='urgent') DESC, c.created_at ASC""", (factory_id,)).fetchall()
-    # 인력 명단 (공장장 → 기사 → 인력 순) + 각자의 미완료 배정 건수
-    staff = con.execute("""SELECT * FROM staff WHERE factory_id=?
-        ORDER BY CASE role WHEN 'manager' THEN 0 WHEN 'driver' THEN 1 ELSE 2 END, name""",
-        (factory_id,)).fetchall()
+    # 인력 명단 + 각자의 미완료·긴급 배정 건수
+    staff = con.execute("SELECT * FROM staff WHERE factory_id=?", (factory_id,)).fetchall()
     open_by_staff = dict(con.execute("""SELECT assignee_id, COUNT(*) FROM complaints
         WHERE status != 'done' AND assignee_id IS NOT NULL GROUP BY assignee_id""").fetchall())
+    urgent_by_staff = dict(con.execute("""SELECT assignee_id, COUNT(*) FROM complaints
+        WHERE status != 'done' AND severity = 'urgent' AND assignee_id IS NOT NULL
+        GROUP BY assignee_id""").fetchall())
     con.close()
+    # 정렬: 「긴급 보유 우선 → 미완료 많은 순 → 이름」 — me_home과 같은 기준(2026-08-11 UI 수정 #20).
+    # (예전엔 공장장→기사→인력 순 고정이었는데, 급한 건을 든 사람이 직급과 무관하게 먼저 보여야
+    #  이 화면만 보고도 누구부터 챙길지 판단할 수 있다)
+    staff = sorted(staff, key=lambda s: (
+        0 if urgent_by_staff.get(s["id"]) else 1,
+        -open_by_staff.get(s["id"], 0),
+        s["name"],
+    ))
     return templates.TemplateResponse(request, "factory.html", {
         "f": factory, "client_rows": client_rows, "total_kg": total_kg,
         "open_tickets": open_tickets, "staff": staff, "open_by_staff": open_by_staff,
@@ -925,8 +931,10 @@ def factory_detail(request: Request, factory_id: int):
 
 
 @app.get("/new")
-def new_form(request: Request):
-    """컴플레인 접수 폼 — 거래처·담당자 목록을 공장별로 묶어, 자기 공장 범위 안에서만."""
+def new_form(request: Request, client_id: int | None = None):
+    """컴플레인 접수 폼 — 거래처·담당자 목록을 공장별로 묶어, 자기 공장 범위 안에서만.
+    client_id가 쿼리로 오면(거래처 상세 화면의 「이 거래처로 접수」 딥링크) 그 거래처를
+    select에서 미리 골라 둔다 — 매번 목록에서 다시 찾는 수고를 던다(2026-08-11 UI 수정 #5)."""
     user = require_user(request)
     if user is None:
         return RedirectResponse("/login", status_code=303)
@@ -944,7 +952,7 @@ def new_form(request: Request):
         args).fetchall()
     con.close()
     return templates.TemplateResponse(request, "new.html", {
-        "clients": clients, "staff": staff,
+        "clients": clients, "staff": staff, "sel_client_id": client_id,
         "TYPE_LABEL": TYPE_LABEL, "ROLE_LABEL": ROLE_LABEL,
     })
 
@@ -983,6 +991,17 @@ def new_submit(request: Request, client_id: int = Form(...), type: str = Form(..
     if user is None:
         return RedirectResponse("/login", status_code=303)
     con = db()
+    # 거래처와 담당자의 소속 공장이 다르면 접수를 막는다 — 화면(JS)에서 이미 다른 공장 담당자를
+    # 골라진 못하게 숨기지만, 폼을 조작하거나 JS가 꺼진 요청도 있을 수 있어 서버가 최종 확인한다.
+    # 담당자 factory_id가 NULL(본사)이면 어느 거래처든 배정 가능 — 예외.
+    client_row = con.execute("SELECT factory_id FROM clients WHERE id=?", (client_id,)).fetchone()
+    assignee_row = con.execute("SELECT factory_id FROM staff WHERE id=?", (assignee_id,)).fetchone()
+    if (client_row is None or assignee_row is None
+            or (assignee_row["factory_id"] is not None
+                and assignee_row["factory_id"] != client_row["factory_id"])):
+        con.close()
+        return HTMLResponse("거래처와 담당자의 소속 공장이 다릅니다. 뒤로 가서 다시 선택해 주세요.",
+                            status_code=400)
     ticket_id = insert_id(con, """INSERT INTO complaints
         (client_id, type, severity, content, channel, assignee_id, status, created_at)
         VALUES (?,?,?,?,?,?, 'new', ?)""",
@@ -1074,6 +1093,16 @@ def me_home(request: Request):
         WHERE status != 'done' AND severity = 'urgent' AND assignee_id IS NOT NULL
         GROUP BY assignee_id""").fetchall())
     con.close()
+    # 목록 정렬: 「긴급 보유 우선 → 미완료 많은 순 → 이름」 — 급한 사람이 눈에 먼저 띄어야
+    # 사장이 누구부터 챙길지 목록만 보고 판단할 수 있다(2026-08-11 UI 수정 #20).
+    # 공장별 묶음(groupby)은 그대로 유지해야 하므로 factory_id를 정렬 키 맨 앞에 둬
+    # 공장 경계를 넘어 뒤섞이지 않게 한다(Jinja groupby는 같은 키가 붙어 있어야 한 묶음으로 본다).
+    staff = sorted(staff, key=lambda s: (
+        s["factory_id"] if s["factory_id"] is not None else -1,
+        0 if urgent_n.get(s["id"]) else 1,          # 긴급 보유가 먼저(0 < 1)
+        -open_n.get(s["id"], 0),                    # 미완료 많은 순
+        s["name"],
+    ))
     return templates.TemplateResponse(request, "me_select.html",
                                       {"staff": staff, "ROLE_LABEL": ROLE_LABEL,
                                        "open_n": open_n, "urgent_n": urgent_n})
