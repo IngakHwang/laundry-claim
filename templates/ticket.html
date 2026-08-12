@@ -78,4 +78,16 @@
           onclick="return confirm('이 클레임을 완료 처리할까요?')">{{ ic.i('check', 15) }} 완료 처리</button>
   <button class="alt-note" type="submit" name="kind" value="note">메모 남기기</button>
 </form>
+
+{% if can_delete %}
+{# 오접수 삭제 — 접수자 본인 + 남의 기록이 붙기 전까지만 노출된다(서버가 같은 조건을 다시 검사).
+   조치 삭제(취소선)와 달리 완전 삭제 — 본인 기록뿐이라 남의 흔적을 지울 일이 없고,
+   오접수가 목록·통계에 남으면 지표를 오염시킨다(2026-08-12 인각님 결정). #}
+<h2>오접수 정정</h2>
+<p class="meta">잘못 접수한 클레임이면 지울 수 있습니다 — 다른 사람의 기록이 붙기 전까지만 가능합니다.</p>
+<form method="post" action="/c/{{ t.id }}/delete"
+      onsubmit="return confirm('클레임 #{{ t.id }} 접수를 삭제할까요? 완전히 사라지고 되돌릴 수 없습니다.')">
+  <button class="alt-danger" type="submit">이 클레임 접수 삭제</button>
+</form>
+{% endif %}
 {% endblock %}

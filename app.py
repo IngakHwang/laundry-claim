@@ -1072,10 +1072,11 @@ def ticket_detail(request: Request, ticket_id: int):
         ORDER BY edited_at, id""", (ticket_id,)):
         edits_map.setdefault(row["action_id"], []).append(row)
     staff = con.execute("SELECT * FROM staff ORDER BY role, name").fetchall()
+    can_delete = deletable_ticket(con, ticket_id, user)   # 오접수 삭제 버튼 노출 여부
     con.close()
     return templates.TemplateResponse(request, "ticket.html", {
         "t": ticket, "acts": acts, "staff": staff, "photo_map": photo_map,
-        "edits_map": edits_map, "EDITABLE_KINDS": EDITABLE_KINDS,
+        "edits_map": edits_map, "EDITABLE_KINDS": EDITABLE_KINDS, "can_delete": can_delete,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL, "KIND_LABEL": KIND_LABEL,
     })
 
@@ -1086,6 +1087,19 @@ KIND_TO_STATUS = {"ack": "acked", "work": "working", "done": "done"}
 # 수정·삭제를 허용하는 조치 종류 — 사람이 손으로 쓴 것만. register(접수)·ack(지시 확인)·
 # move(상태 이동)는 버튼이 만든 기계 기록이라 고칠 이유도, 고치게 둘 이유도 없다.
 EDITABLE_KINDS = ("instruct", "work", "done", "note")
+
+
+def deletable_ticket(con, ticket_id: int, user) -> bool:
+    """오접수 삭제 자격 — ①접수 기록을 쓴 본인이면서 ②티켓의 모든 기록이 본인 것일 때만.
+    남의 기록(지시 확인·처리 보고 등)이 하나라도 붙었으면 불가 — 그때부터는 여럿의 공유
+    이력이라 삭제가 아니라 완료 처리+메모로 정리한다 (2026-08-12 인각님 결정)."""
+    reg = con.execute("""SELECT actor FROM actions WHERE complaint_id=? AND kind='register'
+                         ORDER BY id LIMIT 1""", (ticket_id,)).fetchone()
+    if reg is None or reg["actor"] != user["name"]:
+        return False
+    others = con.execute("SELECT COUNT(*) FROM actions WHERE complaint_id=? AND actor != ?",
+                         (ticket_id, user["name"])).fetchone()[0]
+    return others == 0
 
 
 def own_editable_action(con, action_id: int, user):
@@ -1178,6 +1192,36 @@ def delete_action(request: Request, action_id: int):
     con.execute("UPDATE actions SET deleted_at=? WHERE id=?", (now(), action_id))
     con.commit(); con.close()
     return RedirectResponse(f"/c/{a['complaint_id']}", status_code=303)
+
+
+@app.post("/c/{ticket_id}/delete")
+def delete_ticket(request: Request, ticket_id: int):
+    """오접수 티켓 삭제 — 조치 삭제(취소선)와 달리 여기는 완전 삭제다.
+    자격(deletable_ticket)이 「본인 기록밖에 없는 티켓」만 통과시키므로 남의 흔적을 지우는
+    일이 없고, 오접수가 취소선으로 목록·통계에 남으면 건수·처리 시간 지표를 오염시킨다."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    con = db()
+    if not deletable_ticket(con, ticket_id, user):
+        con.close()
+        return RedirectResponse(f"/c/{ticket_id}", status_code=303)
+    # 지우기 전에 첨부 파일명을 걷어 둔다 — 줄을 지우면 못 찾는다
+    files = [r["filename"] for r in con.execute(
+        """SELECT filename FROM photos WHERE action_id IN
+           (SELECT id FROM actions WHERE complaint_id=?)""", (ticket_id,))]
+    # 자식 → 부모 순서로 지운다 (참조 제약)
+    con.execute("""DELETE FROM photos WHERE action_id IN
+                   (SELECT id FROM actions WHERE complaint_id=?)""", (ticket_id,))
+    con.execute("""DELETE FROM action_edits WHERE action_id IN
+                   (SELECT id FROM actions WHERE complaint_id=?)""", (ticket_id,))
+    con.execute("DELETE FROM actions WHERE complaint_id=?", (ticket_id,))
+    con.execute("DELETE FROM complaints WHERE id=?", (ticket_id,))
+    con.commit(); con.close()
+    for f in files:                       # 파일은 DB 정리가 끝난 뒤에 — 실패해도 고아 파일일 뿐
+        if not f.startswith("demo_"):     # 데모 사진은 여러 예시 티켓이 같이 쓰는 공유 자원
+            (UPLOAD_DIR / f).unlink(missing_ok=True)
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/me")
