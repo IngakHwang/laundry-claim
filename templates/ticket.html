@@ -47,12 +47,13 @@
   <input type="file" name="photos" id="photos" accept="image/*" multiple class="file-input">
   <label class="file-btn" for="photos">{{ ic.i('camera', 15) }} 사진 추가</label>
 
-  <button type="submit" name="kind" value="instruct">{{ ic.i('pin', 15) }} 지시 기록</button>
+  {# 버튼 위계(base.html의 alt-instr·alt-note 주석 참조) — 채움 보라는 처리 보고 하나만 #}
+  <button class="alt-instr" type="submit" name="kind" value="instruct">{{ ic.i('pin', 15) }} 지시 기록</button>
   <button type="submit" name="kind" value="work">처리 보고 기록 → 상태 &#39;처리중&#39;</button>
   {# 완료만은 한 번 묻는다 — me.html·현황판과 같은 원칙. append-only 일지에 오탭 완료가
      영구히 남는 사고를 막는다(재검증 지적) #}
   <button class="alt-done" type="submit" name="kind" value="done"
           onclick="return confirm('이 클레임을 완료 처리할까요?')">{{ ic.i('check', 15) }} 완료 처리</button>
-  <button type="submit" name="kind" value="note">메모 남기기</button>
+  <button class="alt-note" type="submit" name="kind" value="note">메모 남기기</button>
 </form>
 {% endblock %}

@@ -151,6 +151,13 @@ button.small{width:auto; padding:8px 14px; font-size:.9rem; margin-top:8px;}
 .staff-roster button.small{min-height:44px;}
 /* 완료 처리 전용 보조 버튼 — 흰 바탕+완료색 테두리. 주 버튼(처리 보고)과 나란히 놓여도 헷갈리지 않게 */
 button.alt-done{background:var(--surface); color:var(--st-done-tx); border:2px solid var(--st-done); margin-top:8px;}
+/* 티켓 상세 조치 버튼 위계 — 넷이 전부 보라면 "지금 눌러야 할 것"이 안 읽힌다(2026-08-11 관찰).
+   원칙은 현황판 이동 버튼과 동일: 버튼이 만들어내는 기록의 색을 입는다.
+   지시 = 타임라인의 노란 지시 박스(.instr)와 같은 톤 → 누르면 저 박스가 생긴다는 예고.
+   메모 = 상태도 지시도 아닌 중립 기록 → 회색 테두리(가장 낮은 위계).
+   채움(보라)은 처리 보고 하나만 남아 주 행동이 된다. */
+button.alt-instr{background:#FFF9E8; color:#8A6100; border:1.5px solid #EAD9A0; margin-top:8px;}
+button.alt-note{background:var(--surface); color:var(--sub); border:1.5px solid var(--line); margin-top:8px;}
 /* 사진 첨부 버튼 — 기본 file input은 브라우저마다 못생겨서 숨기고, 카메라 아이콘 라벨을
    button.small 톤으로 대신 세운다. label의 for=가 숨긴 input을 그대로 여는 것은 표준 동작이라
    모던 브라우저에서 호환에 문제가 없다(2026-08-11 UI 수정 #10). */
