@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}조치 수정 — 세탁 클레임{% endblock %}
+{% block body %}
+<h1>조치 수정</h1>
+
+{# 규칙을 화면에서 말해준다 — 수정해도 원문이 남는다는 것을 알고 고치게 #}
+<p class="notebox">본인이 쓴 기록만 고칠 수 있습니다. 고쳐도 <b>수정 전 내용이 이력으로 남고</b>,
+  삭제해도 줄은 취소선으로 남습니다 — 조치 일지는 장부이기 때문입니다.</p>
+
+<div class="card">
+  <b>{{ KIND_LABEL[a.kind] }}</b>
+  <span class="meta">{{ a.actor }} · {{ a.created_at }} 작성
+  {% if a.edited_at %} · {{ a.edited_at }} 수정됨{% endif %}</span>
+</div>
+
+<form class="box" method="post" action="/a/{{ a.id }}/edit">
+  <label for="content">내용</label>
+  <textarea name="content" id="content" required>{{ a.content }}</textarea>
+  <button type="submit">저장</button>
+  <a class="meta hist-link" href="/c/{{ a.complaint_id }}">← 취소하고 클레임으로</a>
+</form>
+
+{% if edits %}
+<h2>수정 전 내용</h2>
+<ul class="timeline">
+  {% for e in edits %}
+  <li><s>{{ e.old_content }}</s> <span class="meta">— {{ e.edited_at }}까지</span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2>삭제</h2>
+{# 삭제는 수정과 폼을 분리 — 한 폼에 버튼 둘이면 엔터 제출이 어느 쪽인지 모호해진다.
+   완료 처리와 같은 원칙으로 한 번 묻는다(취소선으로 영구히 남는 조작). #}
+<form method="post" action="/a/{{ a.id }}/delete"
+      onsubmit="return confirm('이 기록을 삭제할까요? 취소선으로 남고 되돌릴 수 없습니다.')">
+  <button class="alt-danger" type="submit">이 기록 삭제 (취소선으로 남음)</button>
+</form>
+{% endblock %}

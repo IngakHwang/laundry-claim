@@ -550,13 +550,21 @@ def init_db() -> None:
         created_at  TEXT NOT NULL,
         done_at     TEXT                      -- 완료 시각 (처리 시간 계산용)
     );
-    CREATE TABLE IF NOT EXISTS actions (      -- 조치 일지 — append-only, 티켓의 타임라인
+    CREATE TABLE IF NOT EXISTS actions (      -- 조치 일지 — 티켓의 타임라인 (이력 보존형 장부)
         id           {auto_id},
         complaint_id INTEGER NOT NULL REFERENCES complaints(id),
         actor        TEXT NOT NULL,           -- 누가 (이름 글자 — v1은 로그인이 없으므로)
         kind         TEXT NOT NULL CHECK (kind IN ('register','instruct','ack','work','done','note','move')),
         content      TEXT DEFAULT '',
-        created_at   TEXT NOT NULL
+        created_at   TEXT NOT NULL,
+        edited_at    TEXT,                    -- 마지막 수정 시각 (본인 글만 고칠 수 있다 — 원문은 action_edits에)
+        deleted_at   TEXT                     -- 삭제 시각 — 줄을 지우지 않고 취소선으로 남긴다 (장부 흔적)
+    );
+    CREATE TABLE IF NOT EXISTS action_edits ( -- 조치 수정 이력 — 고치기 전 내용 보관
+        id          {auto_id},                -- (2026-08-12 인각님 결정: 본인 글 수정·삭제는 허용하되
+        action_id   INTEGER NOT NULL REFERENCES actions(id),   --  원문이 증거로 남아야 한다)
+        old_content TEXT NOT NULL,            -- 수정 직전 내용
+        edited_at   TEXT NOT NULL             -- 언제 고쳤나
     );
     CREATE TABLE IF NOT EXISTS photos (       -- 첨부 사진 — 조치 하나에 여러 장(1:N)이라 표를 따로 둔다
         id        {auto_id},                  -- (한 칸에 파일명 여러 개를 욱여넣으면 정규화 위반)
@@ -598,6 +606,9 @@ def init_db() -> None:
         # 시험 기록 몇 줄뿐이라 옮기지 않고 정리한다. SQLite 쪽은 로컬 파일이라 매번 새로
         # 만들어지므로(위 CREATE IF NOT EXISTS로 이미 새 표만 생김) 별도 조치가 필요 없다.
         con.execute("DROP TABLE IF EXISTS ask_log")
+        # 이관(2026-08-12): 조치 수정·삭제 칸 — 이미 만들어진 표에 칸만 보탠다 (매 부팅 반복 무해)
+        con.execute("ALTER TABLE actions ADD COLUMN IF NOT EXISTS edited_at TEXT")
+        con.execute("ALTER TABLE actions ADD COLUMN IF NOT EXISTS deleted_at TEXT")
     else:
         con.executescript(ddl)
         # 이관: 예전 판은 actions.photo 한 칸에 사진 하나였다 → photos 표로 옮기고 칸을 없앤다
@@ -607,6 +618,10 @@ def init_db() -> None:
             con.execute("""INSERT INTO photos (action_id, filename)
                            SELECT id, photo FROM actions WHERE photo != ''""")
             con.execute("ALTER TABLE actions DROP COLUMN photo")
+        # 이관(2026-08-12): 조치 수정·삭제 칸 (기존 로컬 파일에만 필요 — 새 파일은 위 DDL에 이미 있다)
+        for col in ("edited_at", "deleted_at"):
+            if col not in old_cols:
+                con.execute(f"ALTER TABLE actions ADD COLUMN {col} TEXT")
     # 비어 있을 때만 예시 데이터 (시연용 — 실제 도입 시 지우면 됨)
     # ⚠️ 업체 이름은 전부 가상이다. 실존 호텔·모텔의 「유형과 규모」만 본떴다 —
     #    실명에 지어낸 컴플레인을 붙여 공개 배포하면 그 업체에 대한 허위 기록이 되기 때문.
@@ -1050,16 +1065,38 @@ def ticket_detail(request: Request, ticket_id: int):
     for row in con.execute("""SELECT action_id, filename FROM photos
         WHERE action_id IN (SELECT id FROM actions WHERE complaint_id=?)""", (ticket_id,)):
         photo_map.setdefault(row["action_id"], []).append(row["filename"])
+    # 조치별 수정 이력: {조치 id: [이전 내용 줄, ...]} — 수정된 조치 밑에 원문을 접어 보여준다
+    edits_map = {}
+    for row in con.execute("""SELECT action_id, old_content, edited_at FROM action_edits
+        WHERE action_id IN (SELECT id FROM actions WHERE complaint_id=?)
+        ORDER BY edited_at, id""", (ticket_id,)):
+        edits_map.setdefault(row["action_id"], []).append(row)
     staff = con.execute("SELECT * FROM staff ORDER BY role, name").fetchall()
     con.close()
     return templates.TemplateResponse(request, "ticket.html", {
         "t": ticket, "acts": acts, "staff": staff, "photo_map": photo_map,
+        "edits_map": edits_map, "EDITABLE_KINDS": EDITABLE_KINDS,
         "TYPE_LABEL": TYPE_LABEL, "STATUS_LABEL": STATUS_LABEL, "KIND_LABEL": KIND_LABEL,
     })
 
 
 # 조치 종류 → 티켓 상태 자동 변경 규칙 (확인하면 '확인됨', 처리 보고하면 '처리중'…)
 KIND_TO_STATUS = {"ack": "acked", "work": "working", "done": "done"}
+
+# 수정·삭제를 허용하는 조치 종류 — 사람이 손으로 쓴 것만. register(접수)·ack(지시 확인)·
+# move(상태 이동)는 버튼이 만든 기계 기록이라 고칠 이유도, 고치게 둘 이유도 없다.
+EDITABLE_KINDS = ("instruct", "work", "done", "note")
+
+
+def own_editable_action(con, action_id: int, user):
+    """수정·삭제 자격 검사 — ①존재하고 ②아직 안 지웠고 ③손으로 쓴 종류이고 ④본인 글일 때만
+    그 조치 줄을 돌려준다. 하나라도 어긋나면 None. 남의 글은 role 불문 못 건드린다
+    (2026-08-12 인각님 결정: 타인 수정은 불가, 본인 것만 — 대신 원문 이력이 남는다)."""
+    a = con.execute("SELECT * FROM actions WHERE id=?", (action_id,)).fetchone()
+    if (a is None or a["deleted_at"] or a["kind"] not in EDITABLE_KINDS
+            or a["actor"] != user["name"]):
+        return None
+    return a
 
 
 @app.post("/c/{ticket_id}/action")
@@ -1081,6 +1118,66 @@ def add_action(request: Request, ticket_id: int, kind: str = Form(...),
             con.execute("UPDATE complaints SET done_at=? WHERE id=?", (now(), ticket_id))
     con.commit(); con.close()
     return RedirectResponse(f"/c/{ticket_id}", status_code=303)
+
+
+@app.get("/a/{action_id}/edit")
+def edit_action_form(request: Request, action_id: int):
+    """조치 수정 화면 — 본인 글만 들어올 수 있다. 삭제 버튼도 이 화면에 함께 둔다
+    (타임라인에 삭제 버튼을 바로 두면 오탭 위험 — 화면 하나를 거치는 것이 마찰 겸 확인)."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    con = db()
+    a = own_editable_action(con, action_id, user)
+    if a is None:
+        con.close()
+        return RedirectResponse("/", status_code=303)
+    edits = con.execute("SELECT * FROM action_edits WHERE action_id=? ORDER BY edited_at, id",
+                        (action_id,)).fetchall()
+    con.close()
+    return templates.TemplateResponse(request, "edit_action.html",
+                                      {"a": a, "edits": edits, "KIND_LABEL": KIND_LABEL})
+
+
+@app.post("/a/{action_id}/edit")
+def edit_action_submit(request: Request, action_id: int, content: str = Form(...)):
+    """조치 수정 저장 — 원문을 action_edits에 먼저 남기고 나서 바꾼다 (증거 보존이 먼저).
+    빈 내용이나 그대로면 아무것도 안 바꾼다 — 지우고 싶으면 삭제 버튼을 쓰는 것."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    con = db()
+    a = own_editable_action(con, action_id, user)
+    if a is None:
+        con.close()
+        return RedirectResponse("/", status_code=303)
+    new = content.strip()
+    if new and new != a["content"]:
+        con.execute("INSERT INTO action_edits (action_id, old_content, edited_at) VALUES (?,?,?)",
+                    (action_id, a["content"], now()))
+        con.execute("UPDATE actions SET content=?, edited_at=? WHERE id=?",
+                    (new, now(), action_id))
+        con.commit()
+    con.close()
+    return RedirectResponse(f"/c/{a['complaint_id']}", status_code=303)
+
+
+@app.post("/a/{action_id}/delete")
+def delete_action(request: Request, action_id: int):
+    """조치 삭제 — 줄을 지우지 않고 deleted_at만 찍는다. 화면에는 취소선으로 남는다.
+    티켓 상태는 안 되돌린다 — 상태가 틀어졌으면 현황판에서 옮기면 된다(자동 되돌리기는
+    다른 사람의 후속 기록과 얽혀 더 큰 사고를 만든다)."""
+    user = require_user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    con = db()
+    a = own_editable_action(con, action_id, user)
+    if a is None:
+        con.close()
+        return RedirectResponse("/", status_code=303)
+    con.execute("UPDATE actions SET deleted_at=? WHERE id=?", (now(), action_id))
+    con.commit(); con.close()
+    return RedirectResponse(f"/c/{a['complaint_id']}", status_code=303)
 
 
 @app.get("/me")
@@ -1144,7 +1241,8 @@ def my_tickets(request: Request, staff_id: int):
     for t in tickets:
         rows = con.execute("""SELECT id, kind, content, created_at FROM actions
             WHERE complaint_id=? AND kind IN ('register','instruct')
-            ORDER BY created_at""", (t["id"],)).fetchall()
+              AND deleted_at IS NULL
+            ORDER BY created_at""", (t["id"],)).fetchall()   # 삭제된 지시는 기사에게 안 보낸다
         items = []
         for r in rows:
             photos = [p["filename"] for p in
@@ -1330,8 +1428,9 @@ def ask_proxy(request: Request, question: str = Form(""), chat_id: int = Form(0)
     for t in trows:
         # 티켓마다 최신 지시 한 줄 — 기사가 "뭘 하라고 했는지"까지 답에 실리게
         instr = con.execute("""SELECT content FROM actions
-            WHERE complaint_id=? AND kind='instruct' ORDER BY id DESC LIMIT 1""",
-            (t["id"],)).fetchone()
+            WHERE complaint_id=? AND kind='instruct' AND deleted_at IS NULL
+            ORDER BY id DESC LIMIT 1""",
+            (t["id"],)).fetchone()          # 삭제된 지시는 AI 답변 재료에서도 뺀다
         row = {"id": t["id"], "client": t["client_name"],
                "status": STATUS_LABEL[t["status"]] + ("(긴급)" if t["severity"] == "urgent" else ""),
                "content": t["content"][:200],

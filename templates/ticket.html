@@ -14,13 +14,20 @@
   {% if t.done_at %} · {{ t.done_at }} 완료{% endif %}</span>
 </div>
 
-<h2>조치 일지 <span class="meta">(한 번 쓰면 안 고칩니다 — 시간순으로만 쌓입니다)</span></h2>
+<h2>조치 일지 <span class="meta">(시간순으로 쌓입니다 — 본인 글만 고칠 수 있고, 고쳐도 원문이 남습니다)</span></h2>
+{% set me = get_user(request) %}
 <ul class="timeline">
   {% for a in acts %}
   {# 상태 이동(move)은 작게 — 사람의 지시·처리 기록이 기계 로그에 묻히지 않게.
      지시(instruct)는 반대로 크게 — 노란 박스(.instr)로 "지금 뭘 해야 하는지"를 눈에 띄게 한다
-     (2026-08-11 UI 수정 #19). 두 조건이 동시에 참일 수 없어(move와 instruct는 다른 kind) 안전하다. #}
-  <li class="{{ 'move' if a.kind == 'move' else ('instr' if a.kind == 'instruct' else '') }}">
+     (2026-08-11 UI 수정 #19). 두 조건이 동시에 참일 수 없어(move와 instruct는 다른 kind) 안전하다.
+     삭제된 줄(.del)은 강조를 전부 벗고 취소선만 — 지운 지시가 계속 노랗게 "하라"고 외치면 안 된다. #}
+  <li class="{{ 'del' if a.deleted_at else ('move' if a.kind == 'move' else ('instr' if a.kind == 'instruct' else '')) }}">
+    {% if a.deleted_at %}
+    {# 삭제 = 줄은 남기고 취소선 — 장부의 흔적. 사진은 같이 접는다(지운 기록의 첨부를 크게 보여줄 이유가 없다) #}
+    <b>{{ KIND_LABEL[a.kind] }}</b> — <s>{{ a.content }}</s>
+    <span class="meta">{{ a.actor }} · {{ a.created_at }} · {{ a.deleted_at }} 작성자가 삭제</span>
+    {% else %}
     <b>{{ KIND_LABEL[a.kind] }}</b> — {{ a.content }}
     {% if photo_map.get(a.id) %}
     <span class="photos">
@@ -29,14 +36,29 @@
       {% endfor %}
     </span>
     {% endif %}
-    <span class="meta">{{ a.actor }} · {{ a.created_at }}</span>
+    <span class="meta">{{ a.actor }} · {{ a.created_at }}
+      {%- if a.edited_at %} · {{ a.edited_at }} 수정됨{% endif %}
+      {#- 수정 링크는 본인이 손으로 쓴 기록에만 — 자격 검사는 서버가 다시 하므로 이건 안내일 뿐 #}
+      {%- if me and a.actor == me.name and a.kind in EDITABLE_KINDS %} · <a class="act-edit" href="/a/{{ a.id }}/edit">수정</a>{% endif %}
+    </span>
+    {% if edits_map.get(a.id) %}
+    <details class="edit-hist">
+      <summary>수정 전 내용 {{ edits_map[a.id]|length }}건</summary>
+      <ul>
+        {% for e in edits_map[a.id] %}
+        <li><s>{{ e.old_content }}</s> <span class="meta">— {{ e.edited_at }}까지</span></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+    {% endif %}
   </li>
   {% endfor %}
 </ul>
 
 <h2>조치 추가</h2>
 {# 예전엔 "무엇을" select(기본값 지시)+제출 버튼 하나였다 — 무심코 그대로 제출하면
-   지시가 아닌 처리를 "지시"로 영구 기록하는 사고가 났다(append-only라 못 고친다).
+   지시가 아닌 처리를 "지시"로 영구 기록하는 사고가 났다(당시엔 append-only라 못 고쳤다).
    me.html의 조치 폼처럼 종류별 제출 버튼(name=kind value=...)으로 바꿔, 누른 버튼 자체가
    기록될 종류를 말하게 한다(2026-08-11 UI 수정 #6). 사장·공장장용이라 종류 4가지: 지시/처리 보고/완료/메모. #}
 <form class="box" method="post" action="/c/{{ t.id }}/action" enctype="multipart/form-data">

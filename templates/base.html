@@ -158,6 +158,15 @@ button.alt-done{background:var(--surface); color:var(--st-done-tx); border:2px s
    채움(보라)은 처리 보고 하나만 남아 주 행동이 된다. */
 button.alt-instr{background:#FFF9E8; color:#8A6100; border:1.5px solid #EAD9A0; margin-top:8px;}
 button.alt-note{background:var(--surface); color:var(--sub); border:1.5px solid var(--line); margin-top:8px;}
+/* 조치 수정·삭제 (2026-08-12 인각님 결정: 본인 글만, 이력 보존) — 삭제 버튼은 채움 빨강이 아니라
+   테두리만: 초기화 버튼(진짜 전체 삭제)과 무게를 구분한다 */
+button.alt-danger{background:var(--surface); color:var(--urgent); border:2px solid var(--urgent); margin-top:8px;}
+.timeline li.del{color:var(--faint); border-left-color:var(--border);}   /* 삭제된 줄 — 존재만 알리고 물러난다 */
+.timeline s{text-decoration-thickness:1px;}
+.edit-hist{margin-top:4px; font-size:.85rem; color:var(--sub);}
+.edit-hist summary{cursor:pointer; color:var(--faint);}
+.edit-hist ul{list-style:none; padding:4px 0 0 12px; margin:0;}
+a.act-edit{font-weight:600;}   /* 본인 글에만 뜨는 수정 링크 — meta 줄 안이라 글자만 세운다 */
 /* 사진 첨부 버튼 — 기본 file input은 브라우저마다 못생겨서 숨기고, 카메라 아이콘 라벨을
    button.small 톤으로 대신 세운다. label의 for=가 숨긴 input을 그대로 여는 것은 표준 동작이라
    모던 브라우저에서 호환에 문제가 없다(2026-08-11 UI 수정 #10). */
