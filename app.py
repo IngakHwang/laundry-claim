@@ -1627,6 +1627,21 @@ TABLES_TO_WIPE = ("photos", "actions", "complaints", "chat_msgs", "chats",
 #    끊겨 버리는데, 그건 이 버튼이 할 일이 아니다(연동 해제는 /kakao/disconnect 몫).
 
 
+# ⏱️ 임시 계측 라우트 (2026-08-13, r28 합동 실측) — Render 게이트웨이가 오래 걸리는 응답을
+# 몇 초에 끊는지 잰다(공식 문서에 명시가 없어 실측). 판독 예산(60→90s) 결정의 근거 수집용.
+# 사장 로그인 전용 + 상한 130s. ⚠️ 실측이 끝나면(r29 발신 후) 이 라우트는 제거한다.
+@app.get("/admin/probe-sleep")
+def probe_sleep(request: Request, n: int = 0):
+    user = require_user(request)
+    if user is None or user["role"] != "owner":
+        return RedirectResponse("/", status_code=303)
+    import time as _time                      # 파일 상단에 time이 없어 지역 수입 — 임시 코드를 밖에 안 남기려고
+    n = max(0, min(n, 130))
+    t0 = _time.time()
+    _time.sleep(n)
+    return JSONResponse({"ok": True, "slept": n, "elapsed": round(_time.time() - t0, 1)})
+
+
 @app.get("/admin/reset")
 def admin_reset_form(request: Request):
     """데모 초기화 확인 화면(사장 전용) — 누르면 끝인 버튼이 아니라, 지금 쌓인 규모를 먼저
